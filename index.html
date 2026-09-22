@@ -666,6 +666,7 @@ let state = {
   bodyMetrics: store.get("bodyMetrics", []),
   suggestions: store.get("suggestions", { general: null, byRoutine: {} }),
   calorieLog: store.get("calorieLog", { currentDate: todayISODate(), messages: [], history: [] }),
+  nutritionGoals: store.get("nutritionGoals", { protein: 120, carbs: 150, fat: 55, fiber: 28 }),
   photosCache: [],
   tab: "train",
 };
@@ -1342,12 +1343,42 @@ let selectedHistoryExercise = null;
 function renderHistory() {
   return `
     ${renderMuscleSummaryCard()}
-    <div class="card row">
+    <div class="card row wrap">
       <button class="btn ${historyMode==='workouts'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="workouts">Workouts</button>
+      <button class="btn ${historyMode==='exercises'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="exercises">Exercises</button>
       <button class="btn ${historyMode==='byExercise'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="byExercise">By Exercise</button>
       <button class="btn ${historyMode==='body'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="body">Body</button>
     </div>
-    ${historyMode === "workouts" ? renderWorkoutHistory() : historyMode === "byExercise" ? renderExerciseHistory() : renderBodySection()}
+    ${historyMode === "workouts" ? renderWorkoutHistory()
+      : historyMode === "exercises" ? renderExerciseHistoryFeed()
+      : historyMode === "byExercise" ? renderExerciseHistory()
+      : renderBodySection()}
+  `;
+}
+
+function renderExerciseHistoryFeed() {
+  const rows = [];
+  state.workouts.forEach(w => {
+    w.entries.forEach(e => {
+      if (e.kind !== "strength") return;
+      rows.push({ date: w.date, exerciseName: e.exerciseName, sets: e.sets });
+    });
+  });
+  rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (!rows.length) return `<div class="empty">No exercises logged yet — every exercise you log will show up here, newest first.</div>`;
+
+  return `
+    <div class="card">
+      <h3>Every Exercise, By Date</h3>
+      <p class="muted">Scroll down for older entries.</p>
+    </div>
+    ${rows.map(r => `
+      <div class="card-2">
+        <div class="row between"><strong>${escapeHtml(r.exerciseName)}</strong><span class="muted">${fmtDate(r.date)}</span></div>
+        <div class="muted">${r.sets.map(s => `${s.weight||0}×${s.reps||0}${(s.drops||[]).length ? " → drop " + s.drops.map(d=>`${d.weight||0}×${d.reps||0}`).join(" → ") : ""}`).join(", ")}</div>
+      </div>
+    `).join("")}
   `;
 }
 
@@ -1518,6 +1549,17 @@ function renderBodySection() {
           `).join("")}
         </div>
       ` : `<div class="empty">No photos yet.</div>`}
+    </div>
+
+    <div class="card">
+      <h2>Eating Days</h2>
+      ${state.calorieLog.history.length ? state.calorieLog.history.map((d, i) => `
+        <div class="list-item" data-action="toggle-calorie-day" data-idx="${i}">
+          <div>${fmtDate(d.date)}</div>
+          <div class="muted">${d.totalCalories.toLocaleString()} cal</div>
+        </div>
+        ${expandedCalorieDayIdx === i ? d.messages.map(renderChatMessage).join("") : ""}
+      `).join("") : `<div class="empty">No days logged yet — use the Calories tab and they'll show up here.</div>`}
     </div>
   `;
 }
@@ -1712,10 +1754,15 @@ async function generateSuggestions(target) {
 }
 
 /* ================= CALORIES TAB (AI chat) ================= */
-const CALORIE_SYSTEM_PROMPT = `You are a calorie-tracking assistant inside a personal fitness app. The user will send a short description of food and/or a photo of a meal, possibly throughout the day. Estimate the total calories as best you can from whatever is given — never refuse, always give your best estimate even from a vague description. Respond like this:
+const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user will send a short description of food and/or a photo of a meal, possibly throughout the day. Estimate as best you can from whatever is given — never refuse, always give your best estimate even from a vague description. Respond like this:
 - One or two short, friendly sentences: what you see/read and a brief reasoning for the estimate.
-- Then, alone on the final line, exactly this format with nothing else on that line: CALORIES: <a whole number>
-Always include that CALORIES line. Do not use markdown formatting.`;
+- Then, on their own lines at the very end, exactly this format with nothing else on those lines and nothing after them:
+CALORIES: <whole number>
+PROTEIN: <whole number>
+CARBS: <whole number>
+FAT: <whole number>
+FIBER: <whole number>
+All five values are grams except CALORIES. Always include all five lines, even if you have to roughly estimate some of them. Do not use markdown formatting.`;
 
 let calorieDraftImage = null;
 let calorieSending = false;
@@ -1725,8 +1772,8 @@ function rolloverCalorieDayIfNeeded() {
   const today = todayISODate();
   if (state.calorieLog.currentDate !== today) {
     if (state.calorieLog.messages.length) {
-      const totalCalories = state.calorieLog.messages.reduce((sum, m) => sum + (m.calories || 0), 0);
-      state.calorieLog.history.unshift({ date: state.calorieLog.currentDate, messages: state.calorieLog.messages, totalCalories });
+      const totals = sumMacros(state.calorieLog.messages);
+      state.calorieLog.history.unshift({ date: state.calorieLog.currentDate, messages: state.calorieLog.messages, totalCalories: totals.calories, totals });
     }
     state.calorieLog.currentDate = today;
     state.calorieLog.messages = [];
@@ -1736,13 +1783,42 @@ function rolloverCalorieDayIfNeeded() {
 
 function renderChatMessage(m) {
   const isUser = m.role === "user";
+  const macroBits = [
+    m.calories != null ? `${m.calories.toLocaleString()} cal` : null,
+    m.protein != null ? `${m.protein}g protein` : null,
+    m.carbs != null ? `${m.carbs}g carbs` : null,
+    m.fat != null ? `${m.fat}g fat` : null,
+    m.fiber != null ? `${m.fiber}g fiber` : null,
+  ].filter(Boolean).join(" · ");
   return `
     <div class="row" style="justify-content:${isUser ? "flex-end" : "flex-start"}; margin-bottom:12px;">
       <div style="max-width:82%; background:${isUser ? "var(--blue)" : "var(--panel-2)"}; border:1px solid ${isUser ? "transparent" : "var(--border)"}; border-radius:14px; padding:10px 14px;">
         ${m.imageDataUrl ? `<img src="${m.imageDataUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;display:block;">` : ""}
         <div style="white-space:pre-wrap;">${escapeHtml(m.text)}</div>
-        ${m.calories != null ? `<div class="muted" style="margin-top:6px;">~${m.calories.toLocaleString()} cal</div>` : ""}
+        ${macroBits ? `<div class="muted" style="margin-top:6px;">${macroBits}</div>` : ""}
       </div>
+    </div>
+  `;
+}
+
+function sumMacros(messages) {
+  return messages.reduce((tot, m) => {
+    tot.calories += m.calories || 0;
+    tot.protein += m.protein || 0;
+    tot.carbs += m.carbs || 0;
+    tot.fat += m.fat || 0;
+    tot.fiber += m.fiber || 0;
+    return tot;
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
+}
+
+function renderMacroTile(label, value, goal) {
+  const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+  return `
+    <div class="card-2" style="flex:1;">
+      <h3 style="margin-bottom:4px;">${label}</h3>
+      <div>${Math.round(value)}<span class="muted">/${goal}g</span></div>
+      <div class="vol-bar-track"><div class="vol-bar-fill" style="width:${pct}%"></div></div>
     </div>
   `;
 }
@@ -1776,7 +1852,8 @@ function renderCalories() {
     `;
   }
 
-  const total = state.calorieLog.messages.reduce((s, m) => s + (m.calories || 0), 0);
+  const totals = sumMacros(state.calorieLog.messages);
+  const goals = state.nutritionGoals;
 
   return `
     <div class="card">
@@ -1784,7 +1861,21 @@ function renderCalories() {
         <h2 style="margin:0;">Today</h2>
         <div class="muted">${fmtDate(state.calorieLog.currentDate)}</div>
       </div>
-      <div class="timer" style="font-size:34px;">${total.toLocaleString()} <span class="muted" style="font-size:16px;">cal</span></div>
+      <div class="row" style="align-items:flex-end; gap:24px; margin-top:6px;">
+        <div>
+          <div class="timer" style="font-size:34px;">${totals.calories.toLocaleString()}</div>
+          <div class="muted">calories</div>
+        </div>
+        <div>
+          <div class="timer" style="font-size:34px;">${Math.round(totals.protein)}<span class="muted" style="font-size:16px;">/${goals.protein}g</span></div>
+          <div class="muted">protein</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px; gap:10px;">
+        ${renderMacroTile("Carbs", totals.carbs, goals.carbs)}
+        ${renderMacroTile("Fat", totals.fat, goals.fat)}
+        ${renderMacroTile("Fiber", totals.fiber, goals.fiber)}
+      </div>
     </div>
 
     <div class="card">
@@ -1831,10 +1922,14 @@ async function sendCalorieMessage() {
     contentBlocks.push({ type: "text", text: text || "What did I eat? Estimate the calories from the photo." });
 
     const reply = await callClaudeAPI(CALORIE_SYSTEM_PROMPT, contentBlocks, 500);
-    const match = reply.match(/CALORIES:\s*(\d+)/i);
-    const calories = match ? Number(match[1]) : null;
-    const displayText = reply.replace(/CALORIES:\s*\d+/i, "").trim();
-    state.calorieLog.messages.push({ id: uid(), role: "assistant", text: displayText || reply, calories });
+    const grab = (label) => {
+      const m = reply.match(new RegExp(label + ":\\s*(\\d+(?:\\.\\d+)?)", "i"));
+      return m ? Number(m[1]) : null;
+    };
+    const macros = { calories: grab("CALORIES"), protein: grab("PROTEIN"), carbs: grab("CARBS"), fat: grab("FAT"), fiber: grab("FIBER") };
+    const displayText = reply.replace(/CALORIES:\s*\d+(\.\d+)?/i, "").replace(/PROTEIN:\s*\d+(\.\d+)?/i, "")
+      .replace(/CARBS:\s*\d+(\.\d+)?/i, "").replace(/FAT:\s*\d+(\.\d+)?/i, "").replace(/FIBER:\s*\d+(\.\d+)?/i, "").trim();
+    state.calorieLog.messages.push({ id: uid(), role: "assistant", text: displayText || reply, ...macros });
   } catch (err) {
     state.calorieLog.messages.push({
       id: uid(), role: "assistant",
@@ -1856,6 +1951,19 @@ function renderSettings() {
       <p class="muted">Powers two features: the Calorie Chat (estimating calories from food photos/descriptions) and the Suggestions tab (analyzing your training data). Stored only on this device.</p>
       <div class="field"><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${escapeAttr(state.settings.apiKey)}"></div>
       <button class="btn accent block" data-action="save-api-key">Save Key</button>
+    </div>
+    <div class="card">
+      <h3>Nutrition Goals</h3>
+      <p class="muted">Daily gram targets shown in the Calorie tab. Defaults are standard sports-nutrition guidelines for your stats — adjust anytime, ideally with a parent/doctor or dietitian if your training or targets change.</p>
+      <div class="row wrap">
+        <div class="field grow"><label>Protein (g)</label><input id="goalProtein" type="number" inputmode="numeric" value="${state.nutritionGoals.protein}"></div>
+        <div class="field grow"><label>Carbs (g)</label><input id="goalCarbs" type="number" inputmode="numeric" value="${state.nutritionGoals.carbs}"></div>
+      </div>
+      <div class="row wrap">
+        <div class="field grow"><label>Fat (g)</label><input id="goalFat" type="number" inputmode="numeric" value="${state.nutritionGoals.fat}"></div>
+        <div class="field grow"><label>Fiber (g)</label><input id="goalFiber" type="number" inputmode="numeric" value="${state.nutritionGoals.fiber}"></div>
+      </div>
+      <button class="btn accent block" data-action="save-nutrition-goals">Save Goals</button>
     </div>
     <div class="card">
       <h3>About</h3>
@@ -2105,6 +2213,18 @@ function wireDynamicHandlers(root) {
       state.settings.apiKey = document.getElementById("apiKeyInput").value.trim();
       persist(["settings"]);
       alert("API key saved.");
+    });
+    if (action === "save-nutrition-goals") el.addEventListener("click", () => {
+      const num = (id, fallback) => { const v = Number(document.getElementById(id).value); return v > 0 ? v : fallback; };
+      state.nutritionGoals = {
+        protein: num("goalProtein", state.nutritionGoals.protein),
+        carbs: num("goalCarbs", state.nutritionGoals.carbs),
+        fat: num("goalFat", state.nutritionGoals.fat),
+        fiber: num("goalFiber", state.nutritionGoals.fiber),
+      };
+      persist(["nutritionGoals"]);
+      alert("Nutrition goals saved.");
+      render();
     });
     if (action === "clear-all-data") el.addEventListener("click", () => {
       if (confirm("This will permanently erase all workouts, routines, body metrics, photos, and settings on this device. Continue?")) {
