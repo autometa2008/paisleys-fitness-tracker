@@ -1,0 +1,1804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0f">
+<title>Paisley's Fitness Tracker</title>
+<style>
+  /* ---------- THEME: change these to restyle the whole app ---------- */
+  :root {
+    --bg:        #08090d;   /* page background - near black */
+    --panel:     #0f111a;   /* cards / panels - dark charcoal blue */
+    --panel-2:   #161825;   /* slightly raised panel (nested cards) */
+    --border:    #202333;
+    --text:      #e8ecf5;
+    --text-dim:  #848ba3;
+    --blue:      #1f3d78;   /* primary dark blue - buttons */
+    --blue-dim:  #142042;
+    --accent:    #3d6fc7;   /* darker blue accent - active states, timer */
+    --accent-2:  #5a86d4;
+    --danger:    #ff5e6c;
+    --good:      #4fd18b;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    height: 100%;
+  }
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    padding-top: env(safe-area-inset-top);
+  }
+  h1,h2,h3,h4 { margin: 0 0 10px 0; font-weight: 700; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; color: var(--accent); }
+  h3 { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  p { margin: 0 0 8px 0; }
+  a { color: var(--accent); }
+
+  #app { max-width: 640px; margin: 0 auto; padding: 16px; }
+
+  .topbar {
+    max-width: 640px; margin: 0 auto; padding: 14px 16px 10px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .topbar h1 { display:flex; align-items:center; gap:8px; }
+  .topbar .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .card-2 {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .btn {
+    display: inline-flex; align-items:center; justify-content:center; gap:6px;
+    background: var(--blue); color: #fff; border: none; border-radius: 10px;
+    padding: 11px 16px; font-size: 15px; font-weight: 600; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { opacity: .8; }
+  .btn.accent { background: var(--accent); color: #05121f; }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn.danger { background: var(--danger); color: #fff; }
+  .btn.small { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
+  .btn.block { width: 100%; }
+  .btn[disabled] { opacity: .4; }
+
+  .row { display:flex; gap:8px; align-items:center; }
+  .row.wrap { flex-wrap: wrap; }
+  .between { justify-content: space-between; }
+  .grow { flex: 1; }
+  .muted { color: var(--text-dim); font-size: 13px; }
+  .pill {
+    display:inline-block; padding: 3px 9px; border-radius: 999px;
+    background: var(--blue-dim); color: var(--accent-2); font-size: 11px; font-weight: 600;
+  }
+
+  input, select, textarea {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 9px 10px; font-size: 15px; width: 100%;
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  label { font-size: 12px; color: var(--text-dim); display:block; margin-bottom: 4px; }
+  .field { margin-bottom: 10px; }
+  .num { width: 72px; text-align: center; }
+
+  .tabs {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(18,20,28,0.95); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 50;
+  }
+  .tab {
+    flex: 1; text-align: center; padding: 10px 4px 8px 4px; cursor: pointer;
+    color: var(--text-dim); font-size: 11px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab .icon { font-size: 20px; display:block; margin-bottom: 2px; }
+  .tab.active { color: var(--accent); }
+
+  .timer {
+    font-size: 34px; font-weight: 800; color: var(--accent);
+    font-variant-numeric: tabular-nums; letter-spacing: .02em;
+  }
+
+  .list-item {
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 12px 4px; border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .list-item:last-child { border-bottom: none; }
+
+  .set-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .set-row .idx { width: 22px; color: var(--text-dim); font-size:13px; text-align:center; }
+  .drop-row { margin-left: 28px; margin-bottom:6px; }
+  .drop-tag { color: var(--danger); font-size: 11px; font-weight:700; margin-right:6px; }
+
+  .superset-wrap { border-left: 3px solid var(--accent); padding-left: 10px; margin-bottom: 12px; }
+  .superset-label { color: var(--accent); font-size: 11px; font-weight:700; text-transform:uppercase; margin-bottom:6px; }
+
+  .empty {
+    text-align:center; color: var(--text-dim); padding: 30px 10px;
+  }
+
+  .badge-group { display:flex; flex-wrap:wrap; gap:6px; margin: 6px 0 10px 0; }
+  .chip {
+    padding: 6px 12px; border-radius: 999px; border:1px solid var(--border);
+    background: var(--panel-2); color: var(--text-dim); font-size: 13px; cursor:pointer;
+  }
+  .chip.active { background: var(--blue-dim); color: var(--accent-2); border-color: var(--blue); }
+
+  .search-box { margin-bottom: 10px; }
+
+  .modal-overlay {
+    position: fixed; inset:0; background: rgba(0,0,0,.6); z-index: 100;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .modal {
+    background: var(--panel); border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0; padding: 16px; width:100%; max-width:640px;
+    max-height: 86vh; overflow-y:auto;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  .modal-handle { width:40px; height:4px; background: var(--border); border-radius:2px; margin: 0 auto 14px auto; }
+
+  table { width:100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align:left; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight:600; font-size: 11px; text-transform:uppercase; }
+
+  .vol-bar-track { background: var(--panel-2); border-radius: 4px; height: 6px; overflow:hidden; margin-top:4px; }
+  .vol-bar-fill { background: var(--accent); height:100%; }
+
+  .body-figure { width:100%; height:auto; display:block; }
+  .body-figure path, .body-figure ellipse {
+    stroke: rgba(0,0,0,.4); stroke-width: 0.15; stroke-linejoin: round; transition: fill .3s;
+  }
+  .body-neutral { fill:#2b2f45; }
+  .body-figure-row { display:flex; gap:14px; justify-content:center; margin: 8px 0 14px 0; }
+  .body-figure-row .col { width: 40%; text-align:center; }
+  .body-figure-row .col .muted { display:block; margin-top:4px; }
+  .mini-figures { display:flex; gap:10px; margin: 8px 0; }
+  .mini-figures .col { width: 46px; }
+
+  .muscle-row { display:flex; justify-content:space-between; align-items:center; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .muscle-row:last-child { border-bottom: none; }
+  .legend-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+
+  .photo-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:8px; margin-top:10px; }
+  .photo-thumb { width:100%; aspect-ratio: 3/4; object-fit:cover; border-radius:10px; border:1px solid var(--border); cursor:pointer; background:var(--panel-2); display:block; }
+  .photo-thumb-date { font-size:10px; color:var(--text-dim); text-align:center; margin-top:3px; }
+
+  .measure-row { display:flex; gap:8px; margin-bottom:8px; align-items:flex-end; }
+  .measure-row .field { flex:1; margin-bottom:0; }
+
+  .suggestion-text { white-space:pre-wrap; font-size:14px; line-height:1.55; }
+  .spinner-text { color: var(--accent); font-size: 13px; }
+
+  ::placeholder { color: #4a5068; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1><span class="dot"></span> Paisley's Fitness Tracker</h1>
+  <div class="muted" id="dateLabel"></div>
+</div>
+
+<div id="app"></div>
+
+<div class="tabs">
+  <div class="tab" data-tab="train"><span class="icon">🏋️</span>Train</div>
+  <div class="tab" data-tab="routines"><span class="icon">📋</span>Routines</div>
+  <div class="tab" data-tab="history"><span class="icon">📈</span>History</div>
+  <div class="tab" data-tab="suggestions"><span class="icon">🧠</span>Suggest</div>
+  <div class="tab" data-tab="calories"><span class="icon">🍽️</span>Calories</div>
+  <div class="tab" data-tab="settings"><span class="icon">⚙️</span>Settings</div>
+</div>
+
+<script>
+/* =========================================================
+   IRON LOG — single-file lift/cardio tracker
+   Everything below is plain JS. Data is stored in localStorage
+   under keys prefixed "il_". No frameworks, no build step.
+   ========================================================= */
+
+/* ---------------- Exercise library ---------------- */
+const BUILTIN_EXERCISES = [
+  // Chest
+  ["Barbell Bench Press", ["Chest","Triceps","Shoulders"]],
+  ["Incline Barbell Bench Press", ["Chest","Shoulders","Triceps"]],
+  ["Decline Barbell Bench Press", ["Chest","Triceps"]],
+  ["Dumbbell Bench Press", ["Chest","Triceps","Shoulders"]],
+  ["Incline Dumbbell Press", ["Chest","Shoulders","Triceps"]],
+  ["Decline Dumbbell Press", ["Chest","Triceps"]],
+  ["Dumbbell Chest Fly", ["Chest"]],
+  ["Pec Deck Machine Fly", ["Chest"]],
+  ["Machine Chest Press", ["Chest","Triceps"]],
+  ["Landmine Press", ["Chest","Shoulders","Triceps"]],
+  ["Floor Press", ["Chest","Triceps"]],
+  ["Svend Press", ["Chest"]],
+  ["Push-Up", ["Chest","Triceps","Core"]],
+  ["Floor Push-Up", ["Chest","Triceps","Core"]],
+  ["Incline Push-Up", ["Chest","Triceps","Core"]],
+  ["Diamond Push-Up", ["Triceps","Chest"]],
+  ["Wide Push-Up", ["Chest","Shoulders"]],
+  ["Cable Crossover", ["Chest"]],
+  ["Single-Arm Cable Fly", ["Chest"]],
+  ["Chest Dip", ["Chest","Triceps"]],
+  // Back
+  ["Deadlift", ["Back","Glutes","Hamstrings"]],
+  ["Rack Pull", ["Back","Hamstrings","Forearms"]],
+  ["Good Morning", ["Back","Hamstrings","Glutes"]],
+  ["Pull-Up", ["Back","Biceps"]],
+  ["Chin-Up", ["Back","Biceps"]],
+  ["Assisted Pull-Up", ["Back","Biceps"]],
+  ["Weighted Pull-Up", ["Back","Biceps"]],
+  ["Lat Pulldown", ["Back","Biceps"]],
+  ["Wide-Grip Lat Pulldown", ["Back","Biceps"]],
+  ["Neutral-Grip Lat Pulldown", ["Back","Biceps"]],
+  ["Close-Grip Lat Pulldown", ["Back","Biceps"]],
+  ["Single-Arm Lat Pulldown", ["Back","Biceps"]],
+  ["Straight-Arm Pulldown", ["Back"]],
+  ["Barbell Row", ["Back","Biceps"]],
+  ["Pendlay Row", ["Back","Biceps"]],
+  ["Dumbbell Row", ["Back","Biceps"]],
+  ["Meadows Row", ["Back","Biceps"]],
+  ["T-Bar Row", ["Back","Biceps"]],
+  ["Seated Cable Row", ["Back","Biceps"]],
+  ["Seated Row Machine", ["Back","Biceps"]],
+  ["Single-Arm Cable Row", ["Back","Biceps"]],
+  ["Chest-Supported Row", ["Back","Biceps"]],
+  ["Inverted Row", ["Back","Biceps"]],
+  ["Renegade Row", ["Back","Core"]],
+  ["Face Pull", ["Back","Shoulders"]],
+  ["Dead Hang", ["Back","Forearms","Core"]],
+  // Shoulders
+  ["Overhead Press", ["Shoulders","Triceps"]],
+  ["Push Press", ["Shoulders","Triceps"]],
+  ["Dumbbell Shoulder Press", ["Shoulders","Triceps"]],
+  ["Seated Dumbbell Shoulder Press", ["Shoulders","Triceps"]],
+  ["Single-Arm Overhead Press", ["Shoulders","Triceps","Core"]],
+  ["Arnold Press", ["Shoulders","Triceps"]],
+  ["Lateral Raise", ["Shoulders"]],
+  ["Cable Lateral Raise", ["Shoulders"]],
+  ["Machine Lateral Raise", ["Shoulders"]],
+  ["Front Raise", ["Shoulders"]],
+  ["Plate Front Raise", ["Shoulders"]],
+  ["Rear Delt Fly", ["Shoulders","Back"]],
+  ["Y Raise", ["Shoulders","Back"]],
+  ["W Raise", ["Shoulders","Back"]],
+  ["Cuban Press", ["Shoulders"]],
+  ["Bus Driver", ["Shoulders","Core"]],
+  ["Upright Row", ["Shoulders","Traps"]],
+  ["EZ Bar Upright Row", ["Shoulders","Traps"]],
+  ["Cable Upright Row", ["Shoulders","Traps"]],
+  ["Barbell Shrug", ["Traps","Shoulders"]],
+  ["Dumbbell Shrug", ["Traps","Shoulders"]],
+  ["High Pull", ["Traps","Shoulders","Back"]],
+  // Legs - Quads
+  ["Back Squat", ["Quads","Glutes","Hamstrings"]],
+  ["Front Squat", ["Quads","Glutes"]],
+  ["Smith Machine Squat", ["Quads","Glutes"]],
+  ["Box Squat", ["Quads","Glutes"]],
+  ["Goblet Squat", ["Quads","Glutes"]],
+  ["Sissy Squat", ["Quads"]],
+  ["Pistol Squat", ["Quads","Glutes","Core"]],
+  ["Hack Squat", ["Quads","Glutes"]],
+  ["Leg Press", ["Quads","Glutes"]],
+  ["Single-Leg Press", ["Quads","Glutes"]],
+  ["Leg Extension", ["Quads"]],
+  ["Walking Lunge", ["Quads","Glutes"]],
+  ["Reverse Lunge", ["Quads","Glutes"]],
+  ["Step-Up", ["Quads","Glutes"]],
+  ["Bulgarian Split Squat", ["Quads","Glutes"]],
+  // Legs - Hamstrings
+  ["Romanian Deadlift", ["Hamstrings","Glutes","Back"]],
+  ["Single-Leg Romanian Deadlift", ["Hamstrings","Glutes","Core"]],
+  ["Stiff-Leg Deadlift", ["Hamstrings","Glutes","Back"]],
+  ["Leg Curl", ["Hamstrings"]],
+  ["Lying Hamstring Curl", ["Hamstrings"]],
+  ["Seated Hamstring Curl", ["Hamstrings"]],
+  ["Nordic Hamstring Curl", ["Hamstrings"]],
+  ["Glute-Ham Raise", ["Hamstrings","Glutes"]],
+  // Glutes
+  ["Hip Thrust", ["Glutes","Hamstrings"]],
+  ["Smith Machine Hip Thrust", ["Glutes","Hamstrings"]],
+  ["Single-Leg Hip Thrust", ["Glutes","Hamstrings"]],
+  ["Glute Bridge", ["Glutes","Hamstrings"]],
+  ["Frog Pump", ["Glutes"]],
+  ["Cable Kickback", ["Glutes"]],
+  ["Donkey Kick", ["Glutes","Core"]],
+  ["Cable Pull-Through", ["Glutes","Hamstrings"]],
+  ["Hip Abductor Machine", ["Glutes"]],
+  ["Banded Lateral Walk", ["Glutes"]],
+  ["45-Degree Back Extension", ["Glutes","Hamstrings","Back"]],
+  // Calves
+  ["Standing Calf Raise", ["Calves"]],
+  ["Seated Calf Raise", ["Calves"]],
+  ["Donkey Calf Raise", ["Calves"]],
+  ["Leg Press Calf Raise", ["Calves"]],
+  // Biceps
+  ["Barbell Curl", ["Biceps"]],
+  ["EZ Bar Curl", ["Biceps"]],
+  ["Dumbbell Curl", ["Biceps"]],
+  ["Incline Dumbbell Curl", ["Biceps"]],
+  ["Hammer Curl", ["Biceps","Forearms"]],
+  ["Cable Hammer Curl", ["Biceps","Forearms"]],
+  ["Preacher Curl", ["Biceps"]],
+  ["Spider Curl", ["Biceps"]],
+  ["Concentration Curl", ["Biceps"]],
+  ["Cable Curl", ["Biceps"]],
+  ["Drag Curl", ["Biceps"]],
+  ["Zottman Curl", ["Biceps","Forearms"]],
+  ["21s Bicep Curl", ["Biceps"]],
+  // Triceps
+  ["Tricep Pushdown", ["Triceps"]],
+  ["Rope Tricep Pushdown", ["Triceps"]],
+  ["V-Bar Tricep Pushdown", ["Triceps"]],
+  ["Single-Arm Tricep Pushdown", ["Triceps"]],
+  ["Skull Crusher", ["Triceps"]],
+  ["JM Press", ["Triceps","Chest"]],
+  ["Overhead Tricep Extension", ["Triceps"]],
+  ["Cable Overhead Tricep Extension", ["Triceps"]],
+  ["Tricep Kickback", ["Triceps"]],
+  ["Close-Grip Bench Press", ["Triceps","Chest"]],
+  ["Tricep Dip", ["Triceps","Chest"]],
+  ["Bench Dip", ["Triceps","Chest"]],
+  // Core
+  ["Plank", ["Core"]],
+  ["Side Plank", ["Core"]],
+  ["Hanging Leg Raise", ["Core"]],
+  ["Cable Crunch", ["Core"]],
+  ["Russian Twist", ["Core"]],
+  ["Sit-Up", ["Core"]],
+  ["V-Up", ["Core"]],
+  ["Toe Touch", ["Core"]],
+  ["Bicycle Crunch", ["Core"]],
+  ["Reverse Crunch", ["Core"]],
+  ["Dead Bug", ["Core"]],
+  ["Mountain Climber", ["Core"]],
+  ["Ab Wheel Rollout", ["Core"]],
+  ["Cable Woodchopper", ["Core"]],
+  ["Dragon Flag", ["Core"]],
+  // Forearms
+  ["Wrist Curl", ["Forearms"]],
+  ["Reverse Wrist Curl", ["Forearms"]],
+  ["Reverse Curl", ["Forearms","Biceps"]],
+  ["Plate Pinch Hold", ["Forearms"]],
+  ["Farmer's Carry", ["Forearms","Core","Traps"]],
+  // Full body / compound
+  ["Kettlebell Swing", ["Glutes","Hamstrings","Core"]],
+  ["Clean and Press", ["Shoulders","Back","Quads","Core"]],
+  ["Thruster", ["Quads","Shoulders","Core"]],
+  ["Turkish Get-Up", ["Core","Shoulders"]],
+].map(([name, groups], i) => ({ id: "b" + i, name, groups, builtin: true }));
+
+function exIdByName(name) {
+  const ex = BUILTIN_EXERCISES.find(e => e.name === name);
+  if (!ex) console.warn("Exercise not found in library:", name);
+  return ex ? ex.id : null;
+}
+
+const CARDIO_ACTIVITIES = ["Running","Cycling","Rowing","Elliptical","Stair Climber","Jump Rope","Swimming","Walking","Incline Walk","HIIT"];
+
+const MUSCLE_GROUPS = [...new Set(BUILTIN_EXERCISES.flatMap(e => e.groups))].sort();
+
+/* ---------------- Digital muscle-map body figure ----------------
+   Real anatomical muscle-region artwork (front + back), individually
+   separated per muscle like a fitness-app muscle atlas, so each shape
+   can be colored on its own. Path data adapted from "Body Muscles" by
+   Ivan Vulović (https://github.com/vulovix/body-muscles), Apache
+   License 2.0 — used here with a muted app-matching color treatment,
+   and muscle IDs remapped onto this app's own MUSCLE_GROUPS taxonomy
+   (see atlasGroupFor below) so every region's color is driven by your
+   actual logged training data. */
+const MUSCLE_ATLAS_FRONT_RAW = [
+  { id:"head", d:"m 11.671635,6.3585449 -0.0482,-2.59085 4.20648,-2.46806 4.42769,2.95361 -0.0405,1.94408 0.24197,-3.34467 -2.03129,-2.31103004 -2.84508,-0.51629 -2.20423,0.52915 -1.9363,2.63077004 z" },
+  { id:"face", d:"m 19.748825,6.7034949 0.0203,-2.20747 -3.96689,-2.7637 -3.74099,2.23559 -0.006,2.63528 -0.60741,0.0403 0.27408,1.82447 0.97635,0.33932 0.44244,2.1802901 1.82222,2.06556 2.03518,-0.0607 1.79223,-1.94408 0.35957,-2.2406601 0.97616,-0.33932 0.25159,-1.78416 z" },
+  { id:"neck-right", d:"m 13.304665,11.910505 1.64975,2.35202 0.74426,2.62159 -1.73486,-1.38354 -0.86649,-2.97104 z" },
+  { id:"neck-left", d:"m 18.385135,11.910505 -1.64975,2.35202 -0.74538,2.62234 1.73486,-1.38354 0.86649,-2.97104 z" },
+  { id:"shoulder-front-left", d:"m 19.047795,13.248365 3.55748,1.97916 0.72653,-0.35074 z m -0.107,0.43288 -0.37119,1.73073 2.1846,0.53561 1.40116,-0.49436 z" },
+  { id:"shoulder-side-left", d:"m 22.922305,15.657195 0.75814,-0.41 2.40806,1.66799 1.17364,1.50707 0.62662,1.5626 -0.0464,3.70194 -1.3284,-1.72153 0.0407,-2.59376 -0.48842,-0.50049 c 0,0 -3.09778,-3.19058 -3.14371,-3.21401 z m -0.2409,0.10873 c -0.001,0.0525 3.32987,3.54733 3.32987,3.54733 l 0.10067,3.10396 -1.15426,-1.97782 -2.22547,-0.94804 -1.56576,-2.88481 z" },
+  { id:"shoulder-front-right", d:"m 12.624785,13.248365 -3.5574599,1.97916 -0.72653,-0.35074 z m 0.107,0.43288 0.37119,1.73073 -2.18459,0.53561 -1.4011499,-0.49436 z" },
+  { id:"shoulder-side-right", d:"m 8.7502951,15.657195 -0.75814,-0.41 -2.40806,1.66799 -1.17364,1.50707 -0.62662,1.56259 0.0464,3.70195 1.3284,-1.72153 -0.0407,-2.59376 0.48843,-0.5005 c 0,0 3.09777,-3.19057 3.1437,-3.214 z m 0.2409,0.10873 c 0.002,0.0525 -3.32987,3.54733 -3.32987,3.54733 l -0.10067,3.10396 1.15426,-1.97782 2.22547,-0.94804 1.5657499,-2.88481 z" },
+  { id:"biceps-left", d:"m 27.621665,30.814715 -0.33838,1.70499 -1.81932,-2.54418 -0.6629,-1.26895 z m -2.85271,-2.6096 c -0.0259,-0.0144 -0.0536,-0.0254 -0.0824,-0.0324 l -1.48333,-4.95503 1.00456,-2.08428 1.65511,1.74532 2.23034,6.67667 0.0415,0.93739 c -1.06528,-0.84215 -2.18962,-1.60679 -3.36434,-2.28803 z m 1.6945,-5.75654 1.64893,6.43421 -0.36469,-4.92266 z" },
+  { id:"forearm-left", d:"m 26.955425,32.969125 1.30083,10.28927 -1.10778,0.01 -1.89387,-7.99609 0.19174,-4.53719 z m 1.21978,-1.94971 -0.58729,2.58635 1.11876,9.15614 0.55849,-0.21663 0.2304,-6.77018 z" },
+  { id:"biceps-right", d:"m 4.0746451,30.814715 0.33838,1.70499 1.81931,-2.54418 0.66289,-1.26895 z m 2.8527,-2.6096 c 0.0259,-0.0144 0.0536,-0.0254 0.0824,-0.0324 l 1.48332,-4.95503 -1.00455,-2.08428 -1.65509,1.74532 -2.23034,6.67667 -0.0415,0.93739 c 1.06528,-0.84215 2.18961,-1.60679 3.36433,-2.28803 z m -1.6945,-5.75654 -1.64891,6.43421 0.36468,-4.92266 z" },
+  { id:"forearm-right", d:"m 4.5752651,32.969125 -1.30083,10.28927 1.10778,0.01 1.89387,-7.99609 -0.19174,-4.53719 z m -1.21978,-1.94971 0.58728,2.58635 -1.11875,9.15614 -0.55849,-0.21663 -0.2304,-6.77018 z" },
+  { id:"chest-upper-left", d:"m 20.337455,17.085495 1.72942,3.09103 1.890,0.94 -0.5,0.3 -6.8, -2.1 z" },
+  { id:"chest-lower-left", d:"m 16.66,19.72 6.8,2.1 -0.65,0.5 -0.90604,2.63773 -2.09968,0.86537 -3.34524,-1.655 0.2,-3.8 z" },
+  { id:"chest-upper-right", d:"m 11.351215,17.085495 -1.7294199,3.09103 -1.890,0.94 0.5,0.3 6.8,-2.1 z" },
+  { id:"chest-lower-right", d:"m 15.03,19.72 -6.8,2.1 0.65,0.5 0.90586,2.63773 2.0996699,0.86537 3.34636,-1.655 -0.2,-3.8 z" },
+  { id:"abs-upper-left", d:"m 19.641935,34.707615 1.81341,-1.36479 0.15748,1.83347 1.28642,2.37338 -1.98044,2.73652 -1.03109,0.16554 -0.37026,-3.88816 z" },
+  { id:"serratus-anterior-left", d:"M 19.289,26.152 l -3.11202 -1.40604 0.0937 2.27965 2.80119 1.43603 z M 21.224,27.820 l -1.29355 0.7212 0.14997 -1.70898 z M 20.171,26.183 l 2.47968 -1.03241 -0.9336 2.52093 z M 21.702,27.921 l -1.69005 1.03372 -0.28871 2.0678 1.64975 -1.07533 z" },
+  { id:"obliques-left", d:"M 18.791,29.025 l -0.0622 1.62387 -2.30308 -0.49961 -0.12448 -2.21722 z M 18.635,31.429 l 0.0311 1.99844 -2.20953 0.59391 -0.0311 -3.1227 z M 21.290,30.444 l -1.48383 1.03372 -0.20622 2.10905 1.64862 -1.32355 z" },
+  { id:"abs-upper-right", d:"m 12.045985,34.707615 -1.81341,-1.36479 -0.15748,1.83347 -1.2856799,2.37432 1.9804499,2.73595 1.03109,0.16554 0.37119,-3.88721 z" },
+  { id:"abs-lower-right", d:"m 15.636055,44.919735 -0.60647,-5.91209 -0.015,-3.84879 -2.18479,-1.07533 -0.24746,7.03017 z" },
+  { id:"abs-lower-left", d:"m 16.051865,44.919165 0.60628,-5.91209 0.0154,-3.84915 2.18404,-1.07515 0.24746,7.03017 z" },
+  { id:"serratus-anterior-right", d:"m 12.399365,26.152365 3.11202,-1.40603 -0.0937,2.27965 -2.80138,1.4364 z m -1.93508,1.6685 1.29355,0.72139 -0.14997,-1.70899 z m 1.05303,-1.637 -2.4793099,-1.03259 0.93361,2.52148 z m -1.5316399,1.73729 1.6900499,1.03372 0.28871,2.06743 -1.64881,-1.07515 z" },
+  { id:"obliques-right", d:"M 12.897,29.025 l 0.0623 1.62387 2.30327 -0.49961 0.12448 -2.21703 z M 13.053,31.430 l -0.0309 1.99844 2.20973 0.59353 0.0311 -3.1227 z M 10.398,30.445 l 1.48384 1.0339 0.20622 2.10905 -1.64975 -1.32355 z" },
+  { id:"hip-flexor-right", d:"m 14.404465,45.040075 0.0221,-0.0277 -0.14866,-0.37945 -3.10172,-3.40449 -0.23283,-0.0825 2.05918,5.32009 z m -1.17263,2.01833 1.27705,3.29948 0.42631,-4.04862 -0.25196,-0.64303 z" },
+  { id:"hip-flexor-left", d:"m 17.284025,45.040455 -0.0221,-0.0281 0.14867,-0.37926 3.10171,-3.40449 0.23246,-0.0825 -2.05843,5.3199 z m 1.17263,2.01795 -1.27706,3.29948 -0.42631,-4.04843 0.25197,-0.64303 z" },
+  { id:"quads-left", d:"m 23.419015,50.399125 -0.15504,4.75091 -2.40263,6.60949 0.7362,1.90021 2.36401,-8.34435 z m -0.58154,-11.60825 -0.15485,4.00722 1.31793,7.93154 0.61977,-6.40308 z m -0.38731,5.12268 -2.75152,6.07258 -0.62015,4.87425 1.16232,6.85771 2.51886,-6.98144 0.15504,-7.18764 z" },
+  { id:"adductors-left", d:"m 22.063225,39.369605 v 4.21363 l -2.94574,5.82511 -1.86027,5.78349 0.19365,-4.0072 z m -3.24944,13.42596 -0.0649,0.15467 -1.21294,2.90207 0.78325,7.18803 1.23619,-0.66122 -1.0714,-6.69272 z" },
+  { id:"foot-left", d:"m 17.255895,87.868445 0.1243,3.45228 0.28983,1.20638 h 0.87136 l 0.24897,-0.83181 0.29058,-0.0416 -0.0624,0.83181 1.09914,-0.33332 0.29058,-0.16629 1.24444,-0.27033 0.0416,-0.97748 -1.20319,-2.03743 -0.82974,-1.0399 -2.03294,-0.83181 z" },
+  { id:"tibialis-anterior-left", d:"m 18.251375,70.441125 0.29058,0.91486 0.6224,3.8681 0.0829,5.15733 -0.87136,5.03304 0.0412,-6.44714 -0.91242,-2.57848 -0.12561,-2.82837 z m 1.9915,2.32915 -0.20753,7.73637 -1.65949,6.23904 1.80478,-0.853 3.00816,-10.83583 -1.03727,-6.82095 z" },
+  { id:"knee-left", d:"m 21.404635,64.784375 0.1243,1.12295 -0.87118,1.08171 -0.29058,1.70599 -0.58116,0.24933 -0.49774,-2.57866 -0.33182,-0.91486 0.29058,-0.58247 z m -3.85853,0.0832 0.6224,1.74685 1.3273,2.57867 -0.33182,2.37095 -0.95423,-2.66209 -0.78738,-1.49734 z m 4.97811,-2.37039 -0.95423,5.11609 0.62241,-0.33295 0.49773,1.66381 z" },
+  { id:"quads-right", d:"m 8.2694651,50.399125 0.15504,4.75053 2.4026299,6.60968 -0.73638,1.90021 -2.3640099,-8.34435 z m 0.58117,-11.60768 0.15503,4.00684 -1.31754,7.93154 -0.61978,-6.40308 z m 0.38769,5.1223 2.7515099,6.07239 0.61997,4.87425 -1.16232,6.85771 -2.5190499,-6.98163 -0.15504,-7.18801 z" },
+  { id:"adductors-right", d:"m 9.6258251,39.369415 v 4.21363 l 2.9451699,5.8253 1.86028,5.78349 -0.19366,-4.0072 z m 3.2488699,13.42559 0.0647,0.15485 1.21294,2.90207 -0.78307,7.18803 -1.23618,-0.66102 1.0714,-6.69273 z" },
+  { id:"foot-right", d:"m 14.433335,87.868265 -0.12448,3.45228 -0.29058,1.20637 h -0.87118 l -0.24877,-0.83181 -0.29059,-0.0416 0.0623,0.83181 -1.09934,-0.33333 -0.29058,-0.16629 -1.2448,-0.27033 -0.0412,-0.97747 1.2031899,-2.03781 0.82975,-1.04009 2.03294,-0.83181 z" },
+  { id:"tibialis-anterior-right", d:"m 13.437675,70.440945 -0.29058,0.91486 -0.62241,3.86828 -0.0829,5.15733 0.87174,5.03304 -0.0418,-6.44714 0.91298,-2.57848 0.1243,-2.82837 z m -1.99151,2.32914 0.20735,7.73637 1.65968,6.23904 -1.80497,-0.85299 -3.0079799,-10.83584 1.03728,-6.82095 z" },
+  { id:"knee-right", d:"m 10.284405,64.784375 -0.12448,1.12295 0.87118,1.08171 0.29058,1.70599 0.58116,0.24933 0.49774,-2.57866 0.33182,-0.91486 -0.29058,-0.58247 z m 3.85854,0.0832 -0.62241,1.74685 -1.32767,2.57867 0.33182,2.37095 0.95423,-2.66209 0.78832,-1.4964 z m -4.9786799,-2.37058 0.9542299,5.11609 -0.6223999,-0.33313 -0.49793,1.6638 z" },
+  { id:"elbow-right", d:"m 3.2054751,27.370125 0.005,3.09419 -0.57959,1.91184 -0.54539,-2.41185 z" },
+  { id:"hand-right", d:"m 4.3904451,43.563145 -1.5198,0.0506 -0.76631,-0.67112 -1.21261996,2.15767 -0.86245,3.32873 0.49386,0.22113 0.59814996,-2.20238 0.50016,0.25356 -0.35639,2.49422 0.62382,0.24345 0.41402,-2.49194 0.55839,0.17851 -0.2262,2.76603 0.76938,0.32268 0.25788,-2.86764 0.4578,-0.0181 0.16611,2.65239 0.65997,0.2633 0.0712,-4.56643 0.34158,-0.19428 1.35316,1.68367 0.32832,-0.34354 -0.72644,-2.0551 z" },
+  { id:"elbow-left", d:"m 28.325215,27.370125 -0.005,3.09419 0.57959,1.91184 0.54538,-2.41185 z" },
+  { id:"hand-left", d:"m 27.140245,43.563145 1.5198,0.0506 0.76631,-0.67111 1.21262,2.15766 0.86245,3.32873 -0.49386,0.22113 -0.59815,-2.20238 -0.50016,0.25356 0.35639,2.49422 -0.62382,0.24345 -0.41402,-2.49194 -0.55839,0.17851 0.2262,2.76603 -0.76938,0.32268 -0.25788,-2.86764 -0.4578,-0.0181 -0.16611,2.6524 -0.65997,0.26329 -0.0712,-4.56643 -0.34158,-0.19428 -1.35316,1.68368 -0.32832,-0.34355 0.72644,-2.0551 z" }
+];
+const MUSCLE_ATLAS_BACK_RAW = [
+  { id:"head-back", d:"m 48.157455,6.3585449 0.44208,-0.14964 0.16111,0.16427 1.48163,4.0475101 2.32401,1.45118 2.39971,-1.52387 0.97577,-3.6896901 0.52752,-0.55908 0.23367,0.0981 0.24198,-3.34467 -2.03129,-2.31103004 -2.84509,-0.51629 -2.20422,0.52915 -1.93631,2.63077004 z" },
+  { id:"nape", d:"m 52.369695,12.105075 -2.35767,-1.55045 -1.47119,-3.9514301 -0.60741,0.0403 0.27409,1.82447 0.97635,0.33932 0.7613,2.2157201 0.33017,1.06849 0.0895,2.14894 1.16448,0.008 0.10563,-0.70833 0.54716,-0.0606 z m 1.01793,1.47595 0.23768,0.64982 1.38107,-0.004 0.01,-2.38784 0.25971,-0.79061 0.57215,-2.1698001 0.76359,-0.41018 0.25158,-1.78416 -0.62859,0.0193 -1.08488,3.8998101 -2.39725,1.46684 0.2768,1.48507 z" },
+  { id:"traps-upper-left", d:"M 49.625,14.629 L 49.688,12.005 L 48.974,13.157 L 44.594,14.654 L 45.945,16.925 L 51.222,16.925 L 51.183,14.550 Z" },
+  { id:"traps-mid-left", d:"M 46.034,17.075 L 48.920,21.925 L 51.303,21.925 L 51.224,17.075 Z" },
+  { id:"traps-lower-left", d:"M 49.009,22.075 L 49.572,23.022 L 51.403,28.104 L 51.305,22.075 Z" },
+  { id:"traps-upper-right", d:"M 55.439,14.729 L 55.376,12.104 L 56.090,13.256 L 60.470,14.754 L 59.179,16.925 L 53.844,16.925 L 53.881,14.649 Z" },
+  { id:"traps-mid-right", d:"M 59.089,17.075 L 56.204,21.925 L 53.763,21.925 L 53.842,17.075 Z" },
+  { id:"traps-lower-right", d:"M 56.114,22.075 L 55.492,23.121 L 53.661,28.203 L 53.761,22.075 Z" },
+  { id:"lats-upper-left", d:"M 44.144,15.285 L 39.888,20.286 L 39.426,22.749 L 41.263,21.510 L 44.025,20.355 L 45.663,23.400 L 49.103,23.400 Z" },
+  { id:"deltoid-rear-left", d:"M 42.201,16.586 L 40.626,18.152 L 39.736,20.156 L 43.992,15.155 Z" },
+  { id:"lats-mid-left", d:"M 45.771,23.600 L 45.872,23.789 L 47.009,29.286 L 47.023,30.400 L 51.080,30.400 L 51.053,28.314 L 49.185,23.600 Z" },
+  { id:"lats-lower-left", d:"M 47.026,30.600 L 47.086,35.145 L 51.156,36.255 L 51.082,30.600 Z" },
+  { id:"deltoid-rear-right", d:"M 62.863,16.686 L 64.438,18.251 L 65.328,20.255 L 61.073,15.254 Z" },
+  { id:"lats-upper-right", d:"M 60.921,15.384 L 65.176,20.385 L 65.290,22.849 L 63.801,21.609 L 61.039,20.454 L 59.455,23.400 L 56.022,23.400 Z" },
+  { id:"lats-mid-right", d:"M 59.347,23.600 L 59.192,23.888 L 58.055,29.385 L 58.042,30.400 L 53.986,30.400 L 54.012,28.413 L 55.918,23.600 Z" },
+  { id:"lats-lower-right", d:"M 58.039,30.600 L 57.979,35.245 L 53.908,36.354 L 53.983,30.600 Z" },
+  { id:"triceps-long-left", d:"M 43.593,21.039 L 44.920,23.967 L 43.615,25.653 L 43.186,27.069 L 39.209,29.802 Z" },
+  { id:"triceps-lateral-left", d:"M 43.459,20.972 L 39.075,29.735 L 38.871,25.461 L 39.407,23.674 L 41.242,21.927 Z" },
+  { id:"hand-back-left", d:"M 40.716955,42.424835 l -1.5182,0.0863 -0.78184,-0.65295 -1.16168,2.1855 -0.78414,3.34805 0.49892,0.20949 0.54632,-2.2158 0.50597,0.24175 -0.29779,2.5019 0.62936,0.22875 0.35546,-2.50096 0.56242,0.16536 -0.16126,2.77057 0.77674,0.30455 0.19056,-2.87291 0.45724,-0.0289 0.22827,2.64778 0.66597,0.24774 -0.0359,-4.56685 0.33693,-0.20224 1.39227,1.65147 0.32017,-0.35115 -0.77444,-2.03749 z" },
+  { id:"forearm-flexors-left", d:"M 40.775,29.006 L 42.870,27.644 L 42.187,29.635 L 42.603,34.383 L 40.799,42.081 L 39.814,42.253 Z" },
+  { id:"forearm-extensors-left", d:"M 39.665,42.242 L 38.305,41.501 L 37.998,34.491 L 38.635,31.429 L 39.245,30.209 L 40.625,28.994 Z" },
+  { id:"triceps-long-right", d:"M 61.376,21.213 L 60.056,24.145 L 61.330,26.199 L 61.657,27.251 L 65.780,29.966 Z" },
+  { id:"triceps-lateral-right", d:"M 61.510,21.146 L 65.914,29.899 L 66.108,25.624 L 65.568,23.839 L 63.729,22.096 Z" },
+  { id:"hand-back-right", d:"M 64.301385,42.592325 l 1.51839,0.0828 0.78033,-0.65476 1.16673,2.18281 0.79187,3.34623 -0.49843,0.21064 -0.55144,-2.21453 -0.50541,0.24292 0.30356,2.5012 -0.62882,0.23021 -0.36124,-2.50014 -0.56203,0.16666 0.16765,2.77019 -0.77603,0.30634 -0.19719,-2.87245 -0.45732,-0.0278 -0.22215,2.64829 -0.66539,0.24928 0.0254,-4.56692 -0.3374,-0.20146 -1.38845,1.65469 -0.32098,-0.35041 0.76973,-2.03928 z" },
+  { id:"forearm-flexors-right", d:"M 65.204,42.420 L 63.925,29.007 L 61.764,27.798 L 62.786,29.733 L 62.397,34.555 L 64.219,42.248 Z" },
+  { id:"forearm-extensors-right", d:"M 64.075,28.993 L 65.353,42.405 L 66.712,41.663 L 67.002,34.653 L 66.358,31.591 L 65.745,30.373 Z" },
+  { id:"spine", d:"m 51.733705,14.788555 0.53876,25.33066 0.48967,-0.0297 0.65658,-25.3387 -0.28147,-0.84188 -1.25059,-4.9e-4 z" },
+  { id:"lower-back-erectors-left", d:"M 52.100,37.310 L 49.537,36.465 L 50.244,40.788 L 52.200,42.030 L 52.200,40.270 L 52.150,40.280 Z" },
+  { id:"lower-back-ql-left", d:"M 49.389,36.490 L 46.240,35.460 L 44.720,39.420 L 50.096,40.812 Z" },
+  { id:"lower-back-erectors-right", d:"M 52.800,42.030 L 52.800,40.270 L 52.850,40.260 L 52.900,37.290 L 55.289,36.625 L 54.805,40.801 Z" },
+  { id:"lower-back-ql-right", d:"M 55.439,36.643 L 55.980,36.470 L 58.320,35.720 L 59.660,39.450 L 54.955,40.819 Z" },
+  { id:"gluteus-medius-left", d:"M 50.191,41.481 L 44.740,39.690 L 43.830,41.580 L 43.431,44.301 Z" },
+  { id:"gluteus-maximus-left", d:"M 50.249,41.619 L 43.489,44.439 L 44.410,50.520 L 47.180,51.030 L 51.620,49.090 L 52.200,49.480 L 52.200,42.880 Z" },
+  { id:"gluteus-medius-right", d:"M 55.274,41.079 L 61.354,45.519 L 60.640,42.150 L 59.740,39.860 Z" },
+  { id:"gluteus-maximus-right", d:"M 55.186,41.201 L 52.800,42.880 L 52.800,49.480 L 53.570,49.090 L 57.680,50.760 L 60.500,50.600 L 61.266,45.641 Z" },
+  { id:"knee-back-left", d:"m 51.176145,64.073985 -1.20605,3.01461 0.70738,0.26558 0.89754,3.51771 -0.55801,-4.01191 z m -5.08496,-3.15003 0.63355,1.8609 0.16813,2.03261 0.61314,1.93117 -0.90585,-0.0851 -0.28534,2.15982 z" },
+  { id:"knee-back-right", d:"m 54.019305,64.073985 1.20605,3.01461 -0.70737,0.26558 -0.89755,3.51771 0.55802,-4.01191 z m 5.08496,-3.15003 -0.63355,1.8609 -0.16813,2.03261 -0.61313,1.93117 0.90584,-0.0851 0.28534,2.15982 z" },
+  { id:"calves-gastroc-medial-left", d:"M 50.568,67.512 L 51.669,72.509 L 51.379,75.532 L 51.292,76.825 L 48.983,76.825 Z" },
+  { id:"calves-gastroc-lateral-left", d:"M 50.218,67.512 L 48.633,76.825 L 46.283,76.825 L 45.533,74.263 L 46.783,67.088 Z" },
+  { id:"calves-soleus-left", d:"M 46.386,77.175 L 51.269,77.175 L 50.701,85.598 L 49.037,86.233 Z" },
+  { id:"calves-gastroc-medial-right", d:"M 54.628,67.512 L 53.526,72.509 L 53.816,75.532 L 53.903,76.825 L 56.213,76.825 Z" },
+  { id:"calves-gastroc-lateral-right", d:"M 54.978,67.512 L 56.563,76.825 L 58.912,76.825 L 59.662,74.263 L 58.412,67.088 Z" },
+  { id:"calves-soleus-right", d:"M 53.927,77.175 L 58.810,77.175 L 56.158,86.233 L 54.495,85.598 Z" },
+  { id:"foot-back-left", d:"M 50.933115,88.340995 l 0.85194,1.3581 0.37189,0.79238 -0.15588,1.21774 -0.76984,0.74446 -1.51185,0.12543 -1.1299,-0.29192 -0.24225,-0.95894 0.80765,-1.30405 -0.22562,-0.85987 0.29679,-0.84153 -0.0194,-1.81524 1.53568,-0.54817 z m -1.19598,0.4675 0.15943,1.25776 -0.6023,0.97431 m -0.54436,0.29544 1.06474,0.40084 1.55326,-0.65137 z" },
+  { id:"hamstrings-medial-left", d:"M 49.550,50.504 L 51.751,49.461 L 52.389,49.692 L 52.424,51.499 L 52.499,56.145 L 50.521,62.188 L 50.997,63.602 L 49.569,66.897 L 48.755,66.754 Z" },
+  { id:"hamstrings-lateral-left", d:"M 49.400,50.496 L 48.605,66.746 L 47.803,66.596 L 47.302,64.480 L 47.133,62.723 L 44.712,54.565 L 44.369,50.918 L 47.200,51.500 Z" },
+  { id:"foot-back-right", d:"M 54.262335,88.340995 l -0.85194,1.3581 -0.37189,0.79238 0.15589,1.21774 0.76983,0.74446 1.51186,0.12543 1.12989,-0.29192 0.24225,-0.95894 -0.80765,-1.30405 0.22563,-0.85987 -0.29679,-0.84153 0.0194,-1.81524 -1.53568,-0.54817 z m 1.19598,0.4675 -0.15943,1.25776 0.6023,0.97431 m 0.54436,0.29544 -1.06474,0.40084 -1.55326,-0.65137 z" },
+  { id:"hamstrings-medial-right", d:"M 57.425,51.196 L 56.565,66.806 L 55.759,66.965 L 54.331,63.670 L 54.807,62.256 L 52.829,56.213 L 52.904,51.567 L 52.956,49.769 L 53.520,49.498 Z" },
+  { id:"hamstrings-lateral-right", d:"M 57.575,51.204 L 60.625,50.950 L 60.616,54.633 L 58.195,62.791 L 58.026,64.547 L 57.525,66.663 L 56.715,66.814 Z" }
+];
+
+function atlasGroupFor(id) {
+  if (/^(head|face|neck|nape)/.test(id)) return null;
+  if (/^(elbow|knee|hand|foot|spine)/.test(id)) return null;
+  if (/^(shoulder|deltoid-rear)/.test(id)) return "Shoulders";
+  if (/^traps/.test(id)) return "Traps";
+  if (/^biceps/.test(id)) return "Biceps";
+  if (/^triceps/.test(id)) return "Triceps";
+  if (/^forearm/.test(id)) return "Forearms";
+  if (/^chest/.test(id)) return "Chest";
+  if (/^(lats|lower-back)/.test(id)) return "Back";
+  if (/^gluteus/.test(id)) return "Glutes";
+  if (/^(abs|serratus|obliques)/.test(id)) return "Core";
+  if (/^(quads|adductors|hip-flexor)/.test(id)) return "Quads";
+  if (/^hamstrings/.test(id)) return "Hamstrings";
+  if (/^(tibialis|calves)/.test(id)) return "Calves";
+  return null;
+}
+const MUSCLE_ATLAS_FRONT = MUSCLE_ATLAS_FRONT_RAW.map(m => ({ ...m, group: atlasGroupFor(m.id) }));
+const MUSCLE_ATLAS_BACK = MUSCLE_ATLAS_BACK_RAW.map(m => ({ ...m, group: atlasGroupFor(m.id) }));
+
+function muscleColor(t) {
+  t = Math.max(0, Math.min(1, t || 0));
+  const light = 16 + t * 46;
+  const sat = 16 + t * 68;
+  return `hsl(219, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
+}
+
+function renderBodyFigure(view, colorForGroup) {
+  const atlas = view === "front" ? MUSCLE_ATLAS_FRONT : MUSCLE_ATLAS_BACK;
+  const vb = view === "front" ? "0 0 35 93" : "37 0 35 93";
+  const shapes = atlas.map(m => {
+    if (!m.group) return `<path class="body-neutral" d="${m.d}"/>`;
+    return `<path fill="${colorForGroup(m.group)}" d="${m.d}"/>`;
+  }).join("");
+  return `<svg viewBox="${vb}" class="body-figure" xmlns="http://www.w3.org/2000/svg">${shapes}</svg>`;
+}
+
+function computeMuscleScores(days) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const vol = {};
+  MUSCLE_GROUPS.forEach(g => vol[g] = 0);
+  state.workouts.forEach(w => {
+    if (new Date(w.date).getTime() < cutoff) return;
+    w.entries.forEach(e => {
+      if (e.kind !== "strength") return;
+      let evol = 0;
+      e.sets.forEach(s => {
+        evol += (Number(s.weight) || 0) * (Number(s.reps) || 0);
+        (s.drops || []).forEach(d => evol += (Number(d.weight) || 0) * (Number(d.reps) || 0));
+      });
+      (e.groups || []).forEach(g => { vol[g] = (vol[g] || 0) + evol; });
+    });
+  });
+  const max = Math.max(1, ...Object.values(vol));
+  const scores = {};
+  Object.keys(vol).forEach(g => scores[g] = vol[g] / max);
+  return { scores, vol };
+}
+
+/* ---------------- Default routines (Paisley's split) ---------------- */
+function strengthItem(name, ssGroup) { return { type:"strength", exerciseId: exIdByName(name), targetSets:"", targetReps:"", supersetGroup: ssGroup || null }; }
+function cardioItem(name, ssGroup) { return { type:"cardio", name, supersetGroup: ssGroup || null }; }
+
+const DEFAULT_ROUTINES = [
+  { name: "Monday - Glutes & Hamstrings", exercises: [
+    strengthItem("Smith Machine Hip Thrust"),
+    strengthItem("Romanian Deadlift"),
+    strengthItem("Bulgarian Split Squat"),
+    strengthItem("Lying Hamstring Curl"),
+    strengthItem("Single-Leg Press"),
+    strengthItem("Seated Calf Raise"),
+    strengthItem("Hip Abductor Machine"),
+  ]},
+  { name: "Tuesday - Upper Strength A", exercises: [
+    strengthItem("Chin-Up"),
+    strengthItem("Floor Push-Up"),
+    strengthItem("Neutral-Grip Lat Pulldown"),
+    strengthItem("Incline Dumbbell Press"),
+    strengthItem("Seated Row Machine"),
+    strengthItem("EZ Bar Curl", "tueA"),
+    strengthItem("Rope Tricep Pushdown", "tueA"),
+  ]},
+  { name: "Wednesday - Shoulders & Arms", exercises: [
+    strengthItem("Incline Push-Up"),
+    strengthItem("Seated Dumbbell Shoulder Press"),
+    strengthItem("Cable Lateral Raise"),
+    strengthItem("EZ Bar Upright Row"),
+    strengthItem("Y Raise", "wedA"),
+    strengthItem("Rear Delt Fly", "wedA"),
+    strengthItem("Incline Dumbbell Curl", "wedB"),
+    strengthItem("Single-Arm Tricep Pushdown", "wedB"),
+  ]},
+  { name: "Thursday - Glutes & Quads", exercises: [
+    strengthItem("Smith Machine Hip Thrust"),
+    strengthItem("Leg Press"),
+    strengthItem("Walking Lunge"),
+    strengthItem("Leg Extension"),
+    strengthItem("Seated Hamstring Curl", "thuA"),
+    strengthItem("Standing Calf Raise", "thuA"),
+  ]},
+  { name: "Friday - Upper Strength B", exercises: [
+    strengthItem("Assisted Pull-Up"),
+    strengthItem("Push-Up"),
+    strengthItem("Machine Chest Press"),
+    strengthItem("Wide-Grip Lat Pulldown"),
+    strengthItem("Single-Arm Cable Row"),
+    strengthItem("Hammer Curl", "friA"),
+    strengthItem("Rope Tricep Pushdown", "friA"),
+  ]},
+  { name: "Saturday - Glutes & Core", exercises: [
+    strengthItem("45-Degree Back Extension"),
+    strengthItem("Cable Kickback"),
+    strengthItem("Cable Pull-Through"),
+    strengthItem("Hip Abductor Machine"),
+    strengthItem("Hanging Leg Raise"),
+    strengthItem("Dead Hang"),
+    cardioItem("Incline Walk"),
+  ]},
+];
+
+function seedDefaultRoutines() {
+  let changed = false;
+  DEFAULT_ROUTINES.forEach(dr => {
+    if (!state.routines.some(r => r.name === dr.name)) {
+      state.routines.push({ id: uid(), name: dr.name, exercises: JSON.parse(JSON.stringify(dr.exercises)) });
+      changed = true;
+    }
+  });
+  if (changed) persist(["routines"]);
+}
+
+/* ---------------- Storage helpers ---------------- */
+const store = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem("il_" + key); return v ? JSON.parse(v) : fallback; }
+    catch (e) { return fallback; }
+  },
+  set(key, value) { localStorage.setItem("il_" + key, JSON.stringify(value)); }
+};
+
+let state = {
+  customExercises: store.get("customExercises", []),
+  routines: store.get("routines", []),
+  workouts: store.get("workouts", []),
+  activeWorkout: store.get("activeWorkout", null),
+  settings: store.get("settings", { apiKey: "" }),
+  bodyMetrics: store.get("bodyMetrics", []),
+  suggestions: store.get("suggestions", { general: null, byRoutine: {} }),
+  photosCache: [],
+  tab: "train",
+};
+
+seedDefaultRoutines();
+
+function allExercises() { return [...BUILTIN_EXERCISES, ...state.customExercises]; }
+function exerciseById(id) { return allExercises().find(e => e.id === id); }
+
+function persist(keys) {
+  keys.forEach(k => store.set(k, state[k]));
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+/* ---------------- Date / time helpers ---------------- */
+function todayLabel() {
+  return new Date().toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+}
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms/1000));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  const pad = n => n.toString().padStart(2,"0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+}
+function fmtDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+}
+function todayISODate() {
+  const d = new Date();
+  const pad = n => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+/* ---------------- Progress photo storage (IndexedDB) ----------------
+   Photos are compressed client-side, then stored as blobs in IndexedDB
+   (localStorage is too small/slow for images). state.photosCache holds
+   an in-memory copy with object URLs for rendering. */
+const PHOTO_DB_NAME = "il_photos_db", PHOTO_DB_VERSION = 1, PHOTO_STORE = "photos";
+function openPhotoDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PHOTO_DB_NAME, PHOTO_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function dbAddPhoto(photo) {
+  return openPhotoDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, "readwrite");
+    tx.objectStore(PHOTO_STORE).put(photo);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+function dbGetAllPhotos() {
+  return openPhotoDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, "readonly");
+    const req = tx.objectStore(PHOTO_STORE).getAll();
+    req.onsuccess = () => resolve((req.result || []).sort((a, b) => b.date.localeCompare(a.date)));
+    req.onerror = () => reject(req.error);
+  }));
+}
+function dbDeletePhoto(id) {
+  return openPhotoDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, "readwrite");
+    tx.objectStore(PHOTO_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+function compressImage(file, maxDim, quality) {
+  maxDim = maxDim || 1280; quality = quality || 0.82;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("compress failed")), "image/jpeg", quality);
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+let photoObjectUrls = [];
+function loadPhotos() {
+  return dbGetAllPhotos().then(photos => {
+    photoObjectUrls.forEach(u => URL.revokeObjectURL(u));
+    photoObjectUrls = [];
+    state.photosCache = photos.map(p => {
+      const url = URL.createObjectURL(p.blob);
+      photoObjectUrls.push(url);
+      return { id: p.id, date: p.date, url };
+    });
+  });
+}
+
+/* ================= RENDER ROOT ================= */
+function render() {
+  document.getElementById("dateLabel").textContent = todayLabel();
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === state.tab));
+  const app = document.getElementById("app");
+  if (state.tab === "train") app.innerHTML = renderTrain();
+  else if (state.tab === "routines") app.innerHTML = renderRoutines();
+  else if (state.tab === "history") app.innerHTML = renderHistory();
+  else if (state.tab === "suggestions") app.innerHTML = renderSuggestions();
+  else if (state.tab === "calories") app.innerHTML = renderCalories();
+  else if (state.tab === "settings") app.innerHTML = renderSettings();
+  wireTabHandlers();
+}
+
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => { state.tab = t.dataset.tab; render(); });
+});
+
+/* ================= TRAIN TAB ================= */
+function renderTrain() {
+  if (!state.activeWorkout) {
+    const routineButtons = state.routines.map(r => `
+      <div class="list-item" data-action="start-routine" data-id="${r.id}">
+        <div>
+          <div>${escapeHtml(r.name)}</div>
+          <div class="muted">${r.exercises.length} exercise${r.exercises.length!==1?'s':''}</div>
+        </div>
+        <div class="btn accent small">Start</div>
+      </div>`).join("");
+
+    return `
+      <div class="card">
+        <h2>Start a workout</h2>
+        <p class="muted">Pick a saved routine, or start empty and log freely.</p>
+        <button class="btn block" data-action="start-empty">Start Empty Workout</button>
+      </div>
+      <div class="card">
+        <h3>Your Routines</h3>
+        ${state.routines.length ? routineButtons : `<div class="empty">No routines yet.<br>Create one in the Routines tab.</div>`}
+      </div>
+    `;
+  }
+
+  const w = state.activeWorkout;
+  const elapsed = Date.now() - w.startedAt;
+  const groups = groupEntriesBySuperset(w.entries);
+
+  return `
+    <div class="card">
+      <div class="row between">
+        <div>
+          <div class="muted">${w.routineName || "Freestyle Workout"}</div>
+          <div class="timer" id="liveTimer">${fmtElapsed(elapsed)}</div>
+        </div>
+        <div class="row">
+          <button class="btn ghost small" data-action="cancel-workout" title="Discard without saving">Cancel</button>
+          <button class="btn danger" data-action="finish-workout">Finish</button>
+        </div>
+      </div>
+    </div>
+
+    ${groups.map(g => renderEntryGroup(g)).join("")}
+
+    ${w.entries.length === 0 ? `<div class="empty">No exercises logged yet. Add one below.</div>` : ""}
+
+    <div class="card row wrap">
+      <button class="btn accent grow" data-action="open-add-exercise">+ Add Exercise</button>
+      <button class="btn ghost grow" data-action="open-add-cardio">+ Add Cardio</button>
+    </div>
+  `;
+}
+
+function groupEntriesBySuperset(entries) {
+  const groups = [];
+  const seen = new Set();
+  entries.forEach((e, i) => {
+    if (seen.has(e.id)) return;
+    if (e.supersetGroup) {
+      const partners = entries.filter(x => x.supersetGroup === e.supersetGroup);
+      partners.forEach(p => seen.add(p.id));
+      groups.push({ superset: true, groupId: e.supersetGroup, entries: partners });
+    } else {
+      seen.add(e.id);
+      groups.push({ superset: false, entries: [e] });
+    }
+  });
+  return groups;
+}
+
+function renderEntryGroup(g) {
+  const inner = g.entries.map(e => renderExerciseEntry(e)).join("");
+  if (g.superset) {
+    return `<div class="superset-wrap"><div class="superset-label">Superset</div>${inner}</div>`;
+  }
+  return inner;
+}
+
+function renderExerciseEntry(entry) {
+  if (entry.kind === "cardio") {
+    return `
+      <div class="card">
+        <div class="row between">
+          <h2>🏃 ${escapeHtml(entry.name)}</h2>
+          <button class="btn ghost small" data-action="remove-entry" data-id="${entry.id}">✕</button>
+        </div>
+        <div class="muted">${entry.durationMin} min${entry.distance ? " · " + entry.distance : ""}${entry.notes ? " · " + escapeHtml(entry.notes) : ""}</div>
+      </div>`;
+  }
+
+  const setsHtml = entry.sets.map((s, i) => `
+    <div class="set-row">
+      <div class="idx">${i+1}</div>
+      <input class="num" type="number" inputmode="decimal" placeholder="lb" value="${s.weight ?? ""}"
+        data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="weight">
+      <span class="muted">×</span>
+      <input class="num" type="number" inputmode="numeric" placeholder="reps" value="${s.reps ?? ""}"
+        data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="reps">
+      <button class="btn ghost small" data-action="add-drop" data-id="${entry.id}" data-set="${i}" title="Add drop set">+drop</button>
+      <button class="btn ghost small" data-action="remove-set" data-id="${entry.id}" data-set="${i}">✕</button>
+    </div>
+    ${(s.drops||[]).map((d,di) => `
+      <div class="set-row drop-row">
+        <span class="drop-tag">DROP</span>
+        <input class="num" type="number" inputmode="decimal" placeholder="lb" value="${d.weight ?? ""}"
+          data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="weight">
+        <span class="muted">×</span>
+        <input class="num" type="number" inputmode="numeric" placeholder="reps" value="${d.reps ?? ""}"
+          data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="reps">
+        <button class="btn ghost small" data-action="remove-drop" data-id="${entry.id}" data-set="${i}" data-drop="${di}">✕</button>
+      </div>
+    `).join("")}
+  `).join("");
+
+  return `
+    <div class="card">
+      <div class="row between">
+        <h2>${escapeHtml(entry.exerciseName)}</h2>
+        <button class="btn ghost small" data-action="remove-entry" data-id="${entry.id}">✕</button>
+      </div>
+      <div class="badge-group">${entry.groups.map(g => `<span class="pill">${g}</span>`).join("")}</div>
+      <div class="mini-figures">
+        <div class="col">${renderBodyFigure("front", g => muscleColor(entry.groups.includes(g) ? 0.95 : 0.04))}</div>
+        <div class="col">${renderBodyFigure("back", g => muscleColor(entry.groups.includes(g) ? 0.95 : 0.04))}</div>
+      </div>
+      ${setsHtml}
+      <div class="row" style="margin-top:8px;">
+        <button class="btn ghost small" data-action="add-set" data-id="${entry.id}">+ Add Set</button>
+        ${!entry.supersetGroup ? `<button class="btn ghost small" data-action="make-superset" data-id="${entry.id}">🔗 Link Superset</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+let timerInterval = null;
+function startTimerTick() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const el = document.getElementById("liveTimer");
+    if (el && state.activeWorkout) el.textContent = fmtElapsed(Date.now() - state.activeWorkout.startedAt);
+    else { clearInterval(timerInterval); timerInterval = null; }
+  }, 1000);
+}
+
+/* ---- Add exercise / cardio modal ---- */
+let pendingSupersetSourceId = null;
+
+function openAddExerciseModal(forSupersetWith) {
+  pendingSupersetSourceId = forSupersetWith || null;
+  const groupsChips = MUSCLE_GROUPS.map(g => `<span class="chip" data-filter-group="${g}">${g}</span>`).join("");
+  showModal(`
+    <h2>${forSupersetWith ? "Pick superset partner" : "Add Exercise"}</h2>
+    <input class="search-box" id="exerciseSearch" placeholder="Search exercises...">
+    <div class="badge-group" id="groupChips">${groupsChips}</div>
+    <div id="exerciseResults"></div>
+    <div class="card-2" style="margin-top:10px;">
+      <div class="row between">
+        <span class="muted">Can't find it?</span>
+        <button class="btn ghost small" data-action="open-custom-exercise">+ New Exercise</button>
+      </div>
+    </div>
+  `);
+  renderExerciseResults("");
+  document.getElementById("exerciseSearch").addEventListener("input", (e) => renderExerciseResults(e.target.value, activeGroupFilter));
+  document.querySelectorAll("#groupChips .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      const g = chip.dataset.filterGroup;
+      activeGroupFilter = (activeGroupFilter === g) ? null : g;
+      document.querySelectorAll("#groupChips .chip").forEach(c => c.classList.toggle("active", c.dataset.filterGroup === activeGroupFilter));
+      renderExerciseResults(document.getElementById("exerciseSearch").value, activeGroupFilter);
+    });
+  });
+}
+let activeGroupFilter = null;
+
+function renderExerciseResults(query, groupFilter) {
+  const q = (query||"").toLowerCase();
+  const list = allExercises().filter(e =>
+    e.name.toLowerCase().includes(q) && (!groupFilter || e.groups.includes(groupFilter))
+  );
+  document.getElementById("exerciseResults").innerHTML = list.map(e => `
+    <div class="list-item" data-action="pick-exercise" data-id="${e.id}">
+      <div>
+        <div>${escapeHtml(e.name)}</div>
+        <div class="muted">${e.groups.join(", ")}</div>
+      </div>
+      <div class="btn accent small">Add</div>
+    </div>
+  `).join("") || `<div class="empty">No matches.</div>`;
+}
+
+function addExerciseToWorkout(exId, supersetWithId) {
+  const ex = exerciseById(exId);
+  if (!ex) return;
+  const entry = { id: uid(), kind: "strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets: [{weight:"",reps:""}], supersetGroup: null };
+  if (supersetWithId) {
+    const partner = state.activeWorkout.entries.find(e => e.id === supersetWithId);
+    let gid = partner.supersetGroup;
+    if (!gid) { gid = uid(); partner.supersetGroup = gid; }
+    entry.supersetGroup = gid;
+  }
+  state.activeWorkout.entries.push(entry);
+  saveActiveWorkout();
+  closeModal();
+  render();
+}
+
+function openAddCardioModal() {
+  const opts = CARDIO_ACTIVITIES.map(a => `<option value="${a}">${a}</option>`).join("");
+  showModal(`
+    <h2>Add Cardio</h2>
+    <div class="field"><label>Activity</label><select id="cardioActivity">${opts}</select></div>
+    <div class="field"><label>Duration (minutes)</label><input id="cardioDuration" type="number" inputmode="numeric" placeholder="e.g. 20"></div>
+    <div class="field"><label>Distance (optional)</label><input id="cardioDistance" placeholder="e.g. 2 miles"></div>
+    <div class="field"><label>Notes (optional)</label><input id="cardioNotes" placeholder="e.g. incline 5%"></div>
+    <button class="btn accent block" data-action="save-cardio">Add to Workout</button>
+  `);
+}
+
+function saveCardioEntry() {
+  const name = document.getElementById("cardioActivity").value;
+  const durationMin = document.getElementById("cardioDuration").value;
+  const distance = document.getElementById("cardioDistance").value;
+  const notes = document.getElementById("cardioNotes").value;
+  state.activeWorkout.entries.push({ id: uid(), kind:"cardio", name, durationMin, distance, notes });
+  saveActiveWorkout();
+  closeModal();
+  render();
+}
+
+function openCustomExerciseModal() {
+  const groupChips = MUSCLE_GROUPS.map(g => `<span class="chip" data-toggle-group="${g}">${g}</span>`).join("");
+  showModal(`
+    <h2>New Exercise</h2>
+    <div class="field"><label>Name</label><input id="newExName" placeholder="e.g. Zercher Squat"></div>
+    <div class="field"><label>Muscle groups (tap all that apply)</label>
+      <div class="badge-group" id="newExGroups">${groupChips}</div>
+    </div>
+    <button class="btn accent block" data-action="save-custom-exercise">Save Exercise</button>
+  `);
+  document.querySelectorAll("#newExGroups .chip").forEach(c => {
+    c.addEventListener("click", () => c.classList.toggle("active"));
+  });
+}
+
+function saveCustomExercise() {
+  const name = document.getElementById("newExName").value.trim();
+  if (!name) return;
+  const groups = [...document.querySelectorAll("#newExGroups .chip.active")].map(c => c.dataset.toggleGroup);
+  const ex = { id: uid(), name, groups: groups.length ? groups : ["Other"], builtin:false };
+  state.customExercises.push(ex);
+  persist(["customExercises"]);
+  closeModal();
+  openAddExerciseModal(pendingSupersetSourceId);
+}
+
+function saveActiveWorkout() { persist(["activeWorkout"]); }
+
+function startWorkout(routine) {
+  state.activeWorkout = {
+    id: uid(),
+    routineId: routine ? routine.id : null,
+    routineName: routine ? routine.name : null,
+    startedAt: Date.now(),
+    entries: routine ? routine.exercises.map(re => {
+      if (re.type === "cardio") {
+        return { id: uid(), kind:"cardio", name: re.name, durationMin:"", distance:"", notes:"", supersetGroup: re.supersetGroup || null };
+      }
+      const ex = exerciseById(re.exerciseId);
+      if (!ex) return null;
+      return { id: uid(), kind:"strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets:[{weight:"",reps:""}], supersetGroup: re.supersetGroup || null };
+    }).filter(Boolean) : []
+  };
+  saveActiveWorkout();
+  render();
+  startTimerTick();
+}
+
+function finishWorkout() {
+  const w = state.activeWorkout;
+  w.endedAt = Date.now();
+  w.durationSec = Math.round((w.endedAt - w.startedAt)/1000);
+  w.date = new Date().toISOString();
+  state.workouts.unshift(w);
+  state.activeWorkout = null;
+  persist(["workouts","activeWorkout"]);
+  render();
+}
+
+/* ================= ROUTINES TAB ================= */
+let routineDraft = null;
+
+function renderRoutines() {
+  if (routineDraft) return renderRoutineBuilder();
+  return `
+    <div class="card row between">
+      <h2 style="margin:0;">My Routines</h2>
+      <button class="btn accent small" data-action="new-routine">+ New</button>
+    </div>
+    ${state.routines.length ? state.routines.map(r => `
+      <div class="card">
+        <div class="row between">
+          <div>
+            <h2 style="margin-bottom:2px;">${escapeHtml(r.name)}</h2>
+            <div class="muted">${r.exercises.length} exercise${r.exercises.length!==1?'s':''}</div>
+          </div>
+          <div class="row">
+            <button class="btn ghost small" data-action="edit-routine" data-id="${r.id}">Edit</button>
+            <button class="btn danger small" data-action="delete-routine" data-id="${r.id}">Delete</button>
+          </div>
+        </div>
+        <div class="badge-group">${r.exercises.map(e => `<span class="pill">${escapeHtml(routineItemName(e))}</span>`).join("")}</div>
+      </div>
+    `).join("") : `<div class="empty">No routines yet. Build one for each day of your split (e.g. Push A, Pull A, Legs A...).</div>`}
+  `;
+}
+
+function routineItemName(item) {
+  if (item.type === "cardio") return item.name;
+  const ex = exerciseById(item.exerciseId);
+  return ex ? ex.name : "?";
+}
+
+function renderRoutineBuilder() {
+  return `
+    <div class="card">
+      <h2>${routineDraft.id ? "Edit Routine" : "New Routine"}</h2>
+      <div class="field"><label>Routine name</label><input id="routineName" placeholder="e.g. Push Day A" value="${escapeAttr(routineDraft.name)}"></div>
+    </div>
+    <div class="card">
+      <h3>Exercises</h3>
+      ${routineDraft.exercises.map((re, i) => {
+        const linked = i > 0 && re.supersetGroup && re.supersetGroup === routineDraft.exercises[i-1].supersetGroup;
+        return `
+        <div class="list-item" style="${linked ? 'border-left:3px solid var(--accent); padding-left:8px;' : ''}">
+          <div>
+            <div>${re.type === "cardio" ? "🏃 " : ""}${escapeHtml(routineItemName(re))}</div>
+            <div class="muted">${linked ? "linked superset" : (re.type === "cardio" ? "cardio" : "target left blank - fill in as you go")}</div>
+          </div>
+          <div class="row">
+            ${i > 0 ? `<button class="btn ghost small" data-action="draft-toggle-superset" data-idx="${i}">${linked ? "🔗 Unlink" : "🔗 Link"}</button>` : ""}
+            <button class="btn ghost small" data-action="draft-remove-exercise" data-idx="${i}">✕</button>
+          </div>
+        </div>`;
+      }).join("") || `<div class="empty">No exercises added yet.</div>`}
+      <div class="row wrap" style="margin-top:8px;">
+        <button class="btn ghost grow" data-action="draft-add-exercise">+ Add Exercise</button>
+        <button class="btn ghost grow" data-action="draft-add-cardio">+ Add Cardio</button>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn ghost grow" data-action="cancel-routine">Cancel</button>
+      <button class="btn accent grow" data-action="save-routine">Save Routine</button>
+    </div>
+  `;
+}
+
+function openDraftExercisePicker() {
+  const groupsChips = MUSCLE_GROUPS.map(g => `<span class="chip" data-filter-group="${g}">${g}</span>`).join("");
+  showModal(`
+    <h2>Add Exercise to Routine</h2>
+    <input class="search-box" id="exerciseSearch" placeholder="Search exercises...">
+    <div class="badge-group" id="groupChips">${groupsChips}</div>
+    <div id="exerciseResults"></div>
+  `);
+  const renderDraftResults = (q, gf) => {
+    const query = (q||"").toLowerCase();
+    const list = allExercises().filter(e => e.name.toLowerCase().includes(query) && (!gf || e.groups.includes(gf)));
+    document.getElementById("exerciseResults").innerHTML = list.map(e => `
+      <div class="list-item" data-action="draft-pick-exercise" data-id="${e.id}">
+        <div><div>${escapeHtml(e.name)}</div><div class="muted">${e.groups.join(", ")}</div></div>
+        <div class="btn accent small">Add</div>
+      </div>`).join("") || `<div class="empty">No matches.</div>`;
+  };
+  renderDraftResults("", null);
+  let gf = null;
+  document.getElementById("exerciseSearch").addEventListener("input", e => renderDraftResults(e.target.value, gf));
+  document.querySelectorAll("#groupChips .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      gf = (gf === chip.dataset.filterGroup) ? null : chip.dataset.filterGroup;
+      document.querySelectorAll("#groupChips .chip").forEach(c => c.classList.toggle("active", c.dataset.filterGroup === gf));
+      renderDraftResults(document.getElementById("exerciseSearch").value, gf);
+    });
+  });
+}
+
+function openDraftCardioModal() {
+  const opts = CARDIO_ACTIVITIES.map(a => `<option value="${a}">${a}</option>`).join("");
+  showModal(`
+    <h2>Add Cardio to Routine</h2>
+    <div class="field"><label>Activity</label><select id="draftCardioActivity">${opts}</select></div>
+    <button class="btn accent block" data-action="draft-save-cardio">Add to Routine</button>
+  `);
+}
+
+function toggleDraftSuperset(idx) {
+  if (idx <= 0) return;
+  const items = routineDraft.exercises;
+  const cur = items[idx], prev = items[idx-1];
+  const linked = cur.supersetGroup && cur.supersetGroup === prev.supersetGroup;
+  if (linked) {
+    cur.supersetGroup = null;
+    const stillShared = items.some((it,i) => i !== idx-1 && it.supersetGroup === prev.supersetGroup);
+    if (!stillShared) prev.supersetGroup = null;
+  } else {
+    if (!prev.supersetGroup) prev.supersetGroup = uid();
+    cur.supersetGroup = prev.supersetGroup;
+  }
+}
+
+/* ================= HISTORY TAB ================= */
+let historyMode = "workouts"; // or "byExercise"
+let expandedWorkoutId = null;
+let selectedHistoryExercise = null;
+
+function renderHistory() {
+  return `
+    ${renderMuscleSummaryCard()}
+    <div class="card row">
+      <button class="btn ${historyMode==='workouts'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="workouts">Workouts</button>
+      <button class="btn ${historyMode==='byExercise'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="byExercise">By Exercise</button>
+      <button class="btn ${historyMode==='body'?'accent':'ghost'} grow small" data-action="history-mode" data-mode="body">Body</button>
+    </div>
+    ${historyMode === "workouts" ? renderWorkoutHistory() : historyMode === "byExercise" ? renderExerciseHistory() : renderBodySection()}
+  `;
+}
+
+function renderMuscleSummaryCard() {
+  const { scores, vol } = computeMuscleScores(30);
+  const anyVolume = Object.values(vol).some(v => v > 0);
+  const sorted = MUSCLE_GROUPS.slice().sort((a, b) => (vol[a] || 0) - (vol[b] || 0));
+  return `
+    <div class="card">
+      <h2>Muscle Balance <span class="muted" style="font-weight:400;">— last 30 days</span></h2>
+      ${anyVolume ? `
+        <div class="body-figure-row">
+          <div class="col">${renderBodyFigure("front", g => muscleColor(scores[g] || 0))}<span class="muted">Front</span></div>
+          <div class="col">${renderBodyFigure("back", g => muscleColor(scores[g] || 0))}<span class="muted">Back</span></div>
+        </div>
+        <div>
+          ${sorted.map(g => {
+            const v = vol[g] || 0;
+            const label = v === 0 ? "Not trained recently" : scores[g] < 0.35 ? "Needs more volume" : scores[g] < 0.7 ? "Building" : "Well trained";
+            return `<div class="muscle-row">
+              <div class="row"><span class="legend-dot" style="background:${muscleColor(scores[g] || 0)}"></span>${g}</div>
+              <div class="muted">${label}</div>
+            </div>`;
+          }).join("")}
+        </div>
+      ` : `<div class="empty">Log a few workouts and your muscle balance will show up here — darker means less trained, brighter blue means more trained, relative to your other muscle groups.</div>`}
+    </div>
+  `;
+}
+
+function renderWorkoutHistory() {
+  if (!state.workouts.length) return `<div class="empty">No workouts logged yet. Finish a workout in the Train tab to see it here.</div>`;
+  return state.workouts.map(w => {
+    const vol = totalVolume(w);
+    const expanded = expandedWorkoutId === w.id;
+    return `
+      <div class="card">
+        <div class="list-item" data-action="toggle-workout" data-id="${w.id}">
+          <div>
+            <div>${w.routineName || "Freestyle Workout"}</div>
+            <div class="muted">${fmtDate(w.date)} · ${fmtElapsed(w.durationSec*1000)} · ${vol.toLocaleString()} lb volume</div>
+          </div>
+          <div class="muted">${expanded ? "▲" : "▼"}</div>
+        </div>
+        ${expanded ? groupEntriesBySuperset(w.entries).map(g => renderReadonlyEntryGroup(g)).join("") : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderReadonlyEntryGroup(g) {
+  const inner = g.entries.map(e => {
+    if (e.kind === "cardio") {
+      return `<div class="card-2"><strong>🏃 ${escapeHtml(e.name)}</strong><div class="muted">${e.durationMin} min${e.distance? " · "+e.distance:""}</div></div>`;
+    }
+    const sets = e.sets.map((s,i) => `${s.weight||0}×${s.reps||0}${(s.drops||[]).length ? " → drop " + s.drops.map(d=>`${d.weight||0}×${d.reps||0}`).join(" → ") : ""}`).join(", ");
+    return `<div class="card-2"><strong>${escapeHtml(e.exerciseName)}</strong><div class="muted">${sets}</div></div>`;
+  }).join("");
+  return g.superset ? `<div class="superset-wrap"><div class="superset-label">Superset</div>${inner}</div>` : inner;
+}
+
+function totalVolume(w) {
+  let total = 0;
+  w.entries.forEach(e => {
+    if (e.kind !== "strength") return;
+    e.sets.forEach(s => {
+      total += (Number(s.weight)||0) * (Number(s.reps)||0);
+      (s.drops||[]).forEach(d => total += (Number(d.weight)||0) * (Number(d.reps)||0));
+    });
+  });
+  return total;
+}
+
+function renderExerciseHistory() {
+  const exOptions = allExercises()
+    .filter(e => state.workouts.some(w => w.entries.some(en => en.exerciseId === e.id)))
+    .sort((a,b) => a.name.localeCompare(b.name));
+
+  if (!exOptions.length) return `<div class="empty">Log some workouts first — then you can track progress per exercise here.</div>`;
+
+  if (!selectedHistoryExercise) selectedHistoryExercise = exOptions[0].id;
+
+  const rows = [];
+  state.workouts.slice().reverse().forEach(w => {
+    w.entries.filter(e => e.exerciseId === selectedHistoryExercise).forEach(e => {
+      let best = 0, vol = 0;
+      e.sets.forEach(s => {
+        const w1 = Number(s.weight)||0, r1 = Number(s.reps)||0;
+        if (w1 > best) best = w1;
+        vol += w1*r1;
+        (s.drops||[]).forEach(d => vol += (Number(d.weight)||0)*(Number(d.reps)||0));
+      });
+      rows.push({ date: w.date, best, vol, sets: e.sets.length });
+    });
+  });
+  const maxVol = Math.max(1, ...rows.map(r => r.vol));
+
+  return `
+    <div class="card">
+      <label>Exercise</label>
+      <select id="historyExerciseSelect">
+        ${exOptions.map(e => `<option value="${e.id}" ${e.id===selectedHistoryExercise?"selected":""}>${escapeHtml(e.name)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="card">
+      ${rows.length ? rows.map(r => `
+        <div class="card-2">
+          <div class="row between"><strong>${fmtDate(r.date)}</strong><span class="muted">${r.sets} sets</span></div>
+          <div class="muted">Top weight: ${r.best} lb &nbsp;·&nbsp; Volume: ${r.vol.toLocaleString()} lb</div>
+          <div class="vol-bar-track"><div class="vol-bar-fill" style="width:${(r.vol/maxVol*100).toFixed(0)}%"></div></div>
+        </div>
+      `).join("") : `<div class="empty">No entries yet for this exercise.</div>`}
+    </div>
+  `;
+}
+
+/* ================= HISTORY TAB: BODY SECTION ================= */
+let bodyMetricDraftRows = [];
+
+function renderBodySection() {
+  const sorted = state.bodyMetrics.slice().sort((a, b) => b.date.localeCompare(a.date));
+  return `
+    <div class="card">
+      <h2>Add Body Metrics</h2>
+      <div class="field"><label>Date</label><input type="date" id="bmDate" value="${todayISODate()}"></div>
+      <div class="row wrap">
+        <div class="field grow"><label>Height</label><input id="bmHeight" placeholder="e.g. 5'6&quot;"></div>
+        <div class="field grow"><label>Weight</label><input id="bmWeight" placeholder="e.g. 142 lb"></div>
+      </div>
+      <label>Measurements (optional)</label>
+      ${bodyMetricDraftRows.map((r, i) => `
+        <div class="measure-row">
+          <div class="field"><input placeholder="e.g. Waist" value="${escapeAttr(r.label)}" data-action="bm-row-field" data-idx="${i}" data-field="label"></div>
+          <div class="field"><input placeholder="e.g. 27 in" value="${escapeAttr(r.value)}" data-action="bm-row-field" data-idx="${i}" data-field="value"></div>
+          <button class="btn ghost small" data-action="bm-remove-row" data-idx="${i}">✕</button>
+        </div>
+      `).join("")}
+      <button class="btn ghost block" style="margin-bottom:10px;" data-action="bm-add-row">+ Add Measurement</button>
+      <button class="btn accent block" data-action="save-body-metric">Save Entry</button>
+    </div>
+
+    <div class="card">
+      <h3>History</h3>
+      ${sorted.length ? sorted.map(m => `
+        <div class="card-2">
+          <div class="row between">
+            <strong>${fmtDate(m.date)}</strong>
+            <button class="btn ghost small" data-action="delete-body-metric" data-id="${m.id}">✕</button>
+          </div>
+          <div class="muted">${[m.height ? "Height: " + escapeHtml(m.height) : "", m.weight ? "Weight: " + escapeHtml(m.weight) : ""].filter(Boolean).join(" · ")}</div>
+          ${Object.keys(m.measurements || {}).length ? `<div class="badge-group">${Object.entries(m.measurements).map(([k, v]) => `<span class="pill">${escapeHtml(k)}: ${escapeHtml(v)}</span>`).join("")}</div>` : ""}
+        </div>
+      `).join("") : `<div class="empty">No entries yet.</div>`}
+    </div>
+
+    <div class="card">
+      <h2>Progress Photos</h2>
+      <p class="muted">Saved privately on this device only.</p>
+      <input type="file" accept="image/*" id="bodyPhotoInput" style="display:none;">
+      <button class="btn accent block" data-action="add-body-photo">+ Add Photo</button>
+      ${state.photosCache.length ? `
+        <div class="photo-grid">
+          ${state.photosCache.map(p => `
+            <div>
+              <img class="photo-thumb" src="${p.url}" data-action="view-photo" data-id="${p.id}">
+              <div class="photo-thumb-date">${fmtDate(p.date)}</div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `<div class="empty">No photos yet.</div>`}
+    </div>
+  `;
+}
+
+function openPhotoModal(id) {
+  const p = state.photosCache.find(x => x.id === id);
+  if (!p) return;
+  showModal(`
+    <h2>${fmtDate(p.date)}</h2>
+    <img src="${p.url}" style="width:100%; border-radius:12px; margin-bottom:12px;">
+    <button class="btn danger block" data-action="delete-photo" data-id="${p.id}">Delete Photo</button>
+  `);
+}
+
+/* ================= SUGGESTIONS TAB ================= */
+function buildTrainingSummary() {
+  const { vol } = computeMuscleScores(30);
+  const lines = [];
+
+  lines.push("MUSCLE GROUP TRAINING VOLUME (last 30 days, arbitrary units = sum of weight x reps):");
+  MUSCLE_GROUPS.forEach(g => lines.push(`- ${g}: ${Math.round(vol[g] || 0)}`));
+
+  lines.push("");
+  lines.push(`WORKOUTS LOGGED (last 30 days): ${state.workouts.filter(w => Date.now() - new Date(w.date).getTime() < 30*24*60*60*1000).length}`);
+
+  lines.push("");
+  lines.push("CURRENT ROUTINES:");
+  state.routines.forEach(r => {
+    const names = r.exercises.map(routineItemName).join(", ");
+    lines.push(`- ${r.name}: ${names || "(empty)"}`);
+  });
+
+  lines.push("");
+  lines.push("RECENT PERFORMANCE PER EXERCISE (most recent sessions, top set = highest weight x reps that session):");
+  const exIds = [...new Set(state.workouts.flatMap(w => w.entries.filter(e => e.kind === "strength").map(e => e.exerciseId)))];
+  exIds.forEach(exId => {
+    const ex = exerciseById(exId);
+    if (!ex) return;
+    const sessions = [];
+    state.workouts.forEach(w => {
+      w.entries.filter(e => e.exerciseId === exId).forEach(e => {
+        let best = { weight: 0, reps: 0 };
+        e.sets.forEach(s => { if ((Number(s.weight)||0) >= best.weight) best = { weight: Number(s.weight)||0, reps: Number(s.reps)||0 }; });
+        sessions.push({ date: w.date, best });
+      });
+    });
+    sessions.sort((a,b) => new Date(b.date) - new Date(a.date));
+    const recent = sessions.slice(0, 4).reverse();
+    if (recent.length) {
+      lines.push(`- ${ex.name}: ` + recent.map(s => `${fmtDate(s.date)}: ${s.best.weight}x${s.best.reps}`).join(" -> "));
+    }
+  });
+
+  const latestMetric = state.bodyMetrics.slice().sort((a,b) => b.date.localeCompare(a.date))[0];
+  if (latestMetric) {
+    lines.push("");
+    lines.push(`MOST RECENT BODY METRICS (${fmtDate(latestMetric.date)}): height ${latestMetric.height || "?"}, weight ${latestMetric.weight || "?"}`);
+  }
+
+  return lines.join("\n");
+}
+
+async function callClaudeAPI(systemPrompt, userText) {
+  const key = state.settings.apiKey;
+  if (!key) { const e = new Error("No API key set."); e.code = "NO_KEY"; throw e; }
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-5",
+      max_tokens: 1200,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userText }]
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`API error ${res.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return (data.content || []).map(b => b.text || "").join("");
+}
+
+const SUGGESTIONS_SYSTEM_PROMPT = `You are an experienced, encouraging strength coach reviewing a lifter's own logged training data from their personal tracker app. You only know what's in the data given to you — do not assume anything else about them. Give specific, concrete suggestions grounded in the numbers: call out muscle groups that look undertrained relative to the rest, flag exercises where the weight/reps have been flat for multiple sessions (possible plateau -> suggest a concrete progressive-overload tweak, like adding 5lb or one rep), and suggest at most 1-2 exercise additions or swaps per routine if something looks like a clear gap. Keep it tight: short bullet points, no fluff, no generic disclaimers about consulting a doctor. Plain text only, no markdown symbols.`;
+
+let suggestionsLoading = null; // "general" or routineId, or null
+
+function renderSuggestions() {
+  if (!state.settings.apiKey) {
+    return `
+      <div class="card">
+        <h2>🧠 Suggestions</h2>
+        <p class="muted">This uses Claude to look at your logged workouts and routines and suggest what to adjust — undertrained muscles, stalled lifts, progressive overload tweaks.</p>
+        <p class="muted">Add your Claude API key in <strong>Settings</strong> first, then come back here.</p>
+      </div>
+    `;
+  }
+
+  const general = state.suggestions.general;
+  const genCard = `
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0;">Overall Analysis</h2>
+        <button class="btn accent small" data-action="get-suggestions-general" ${suggestionsLoading === "general" ? "disabled" : ""}>
+          ${suggestionsLoading === "general" ? "Thinking..." : (general ? "Refresh" : "Analyze")}
+        </button>
+      </div>
+      ${general ? `<p class="muted">Generated ${fmtDate(general.generatedAt)}</p><div class="suggestion-text">${escapeHtml(general.text)}</div>` : `<p class="muted">Get a read on your overall training: muscle balance, stalled lifts, what to prioritize next.</p>`}
+    </div>
+  `;
+
+  const routinesCards = state.routines.map(r => {
+    const sug = state.suggestions.byRoutine[r.id];
+    const loading = suggestionsLoading === r.id;
+    return `
+      <div class="card">
+        <div class="row between">
+          <h2 style="margin:0;">${escapeHtml(r.name)}</h2>
+          <button class="btn ghost small" data-action="get-suggestions-routine" data-id="${r.id}" ${loading ? "disabled" : ""}>
+            ${loading ? "Thinking..." : (sug ? "Refresh" : "Suggest")}
+          </button>
+        </div>
+        <div class="badge-group">${r.exercises.map(e => `<span class="pill">${escapeHtml(routineItemName(e))}</span>`).join("")}</div>
+        ${sug ? `<div class="suggestion-text">${escapeHtml(sug.text)}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  return `
+    ${genCard}
+    <h3 style="margin:16px 0 8px 4px;">Your Routines</h3>
+    ${state.routines.length ? routinesCards : `<div class="empty">No routines yet — build one in the Routines tab.</div>`}
+  `;
+}
+
+async function generateSuggestions(target) {
+  suggestionsLoading = target === "general" ? "general" : target.id;
+  render();
+  try {
+    const summary = buildTrainingSummary();
+    const userText = target === "general"
+      ? `Here is my current training data:\n\n${summary}\n\nGive me an overall read on my training: which muscle groups need more attention, which lifts look stalled and what to do about it, and what I should prioritize over the next couple weeks.`
+      : `Here is my current training data:\n\n${summary}\n\nFocus specifically on this routine: "${target.name}" (exercises: ${target.exercises.map(routineItemName).join(", ")}). Suggest specific edits to this routine — progressive overload on specific exercises, anything to swap or add, given how it's been going.`;
+    const text = await callClaudeAPI(SUGGESTIONS_SYSTEM_PROMPT, userText);
+    if (target === "general") {
+      state.suggestions.general = { text, generatedAt: new Date().toISOString() };
+    } else {
+      state.suggestions.byRoutine[target.id] = { text, generatedAt: new Date().toISOString() };
+    }
+    persist(["suggestions"]);
+  } catch (err) {
+    alert(err.code === "NO_KEY" ? "Add your Claude API key in Settings first." : "Couldn't get suggestions: " + err.message);
+  } finally {
+    suggestionsLoading = null;
+    render();
+  }
+}
+
+/* ================= CALORIES TAB (placeholder — built next) ================= */
+function renderCalories() {
+  return `
+    <div class="card">
+      <h2>🍽️ AI Calorie Chat</h2>
+      <p class="muted">Coming up next: send a photo or description of what you ate and get an instant calorie estimate logged to your day.</p>
+      <p class="muted">This feature calls Claude's AI, so it needs an API key first — add yours in the <strong>Settings</strong> tab, then this screen goes live.</p>
+    </div>
+  `;
+}
+
+/* ================= SETTINGS TAB ================= */
+function renderSettings() {
+  return `
+    <div class="card">
+      <h2>Claude API Key</h2>
+      <p class="muted">Powers two features: the Calorie Chat (estimating calories from food photos/descriptions) and the Suggestions tab (analyzing your training data). Stored only on this device.</p>
+      <div class="field"><input id="apiKeyInput" type="password" placeholder="sk-ant-..." value="${escapeAttr(state.settings.apiKey)}"></div>
+      <button class="btn accent block" data-action="save-api-key">Save Key</button>
+    </div>
+    <div class="card">
+      <h3>About</h3>
+      <p class="muted">Paisley's Fitness Tracker stores everything locally on this device — your workouts, routines, body metrics, and photos never leave your phone, except when you use Calorie Chat or Suggestions, which send the relevant data (a food photo/description, or a summary of your training) to Claude to get a response.</p>
+    </div>
+    <div class="card">
+      <h3>Danger Zone</h3>
+      <button class="btn danger block" data-action="clear-all-data">Erase All Data</button>
+    </div>
+  `;
+}
+
+/* ================= MODAL ================= */
+function showModal(html) {
+  closeModal();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "modalOverlay";
+  overlay.innerHTML = `<div class="modal"><div class="modal-handle"></div>${html}</div>`;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  document.body.appendChild(overlay);
+  wireDynamicHandlers(overlay);
+}
+function closeModal() {
+  const o = document.getElementById("modalOverlay");
+  if (o) o.remove();
+}
+
+/* ================= EVENT WIRING ================= */
+function escapeHtml(s) { return (s||"").toString().replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+function wireTabHandlers() {
+  wireDynamicHandlers(document.getElementById("app"));
+  if (state.activeWorkout) startTimerTick();
+}
+
+function wireDynamicHandlers(root) {
+  root.querySelectorAll("[data-action]").forEach(el => {
+    const action = el.dataset.action;
+    if (el.dataset.wired) return;
+    el.dataset.wired = "1";
+
+    if (action === "start-empty") el.addEventListener("click", () => startWorkout(null));
+    if (action === "start-routine") el.addEventListener("click", () => startWorkout(state.routines.find(r => r.id === el.dataset.id)));
+    if (action === "finish-workout") el.addEventListener("click", () => { if (confirm("Finish and save this workout?")) finishWorkout(); });
+    if (action === "cancel-workout") el.addEventListener("click", () => {
+      if (confirm("Discard this workout? Nothing will be saved.")) {
+        state.activeWorkout = null;
+        persist(["activeWorkout"]);
+        render();
+      }
+    });
+    if (action === "open-add-exercise") el.addEventListener("click", () => openAddExerciseModal(null));
+    if (action === "open-add-cardio") el.addEventListener("click", () => openAddCardioModal());
+    if (action === "open-custom-exercise") el.addEventListener("click", () => openCustomExerciseModal());
+    if (action === "save-custom-exercise") el.addEventListener("click", () => saveCustomExercise());
+    if (action === "pick-exercise") el.addEventListener("click", () => addExerciseToWorkout(el.dataset.id, pendingSupersetSourceId));
+    if (action === "save-cardio") el.addEventListener("click", () => saveCardioEntry());
+    if (action === "make-superset") el.addEventListener("click", () => openAddExerciseModal(el.dataset.id));
+    if (action === "remove-entry") el.addEventListener("click", () => {
+      state.activeWorkout.entries = state.activeWorkout.entries.filter(e => e.id !== el.dataset.id);
+      saveActiveWorkout(); render();
+    });
+    if (action === "add-set") el.addEventListener("click", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      entry.sets.push({ weight:"", reps:"" });
+      saveActiveWorkout(); render();
+    });
+    if (action === "remove-set") el.addEventListener("click", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      entry.sets.splice(Number(el.dataset.set), 1);
+      if (entry.sets.length === 0) entry.sets.push({weight:"",reps:""});
+      saveActiveWorkout(); render();
+    });
+    if (action === "add-drop") el.addEventListener("click", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const set = entry.sets[Number(el.dataset.set)];
+      set.drops = set.drops || [];
+      set.drops.push({ weight:"", reps:"" });
+      saveActiveWorkout(); render();
+    });
+    if (action === "remove-drop") el.addEventListener("click", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const set = entry.sets[Number(el.dataset.set)];
+      set.drops.splice(Number(el.dataset.drop), 1);
+      saveActiveWorkout(); render();
+    });
+    if (action === "set-field") el.addEventListener("input", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      entry.sets[Number(el.dataset.set)][el.dataset.field] = el.value;
+      saveActiveWorkout();
+    });
+    if (action === "drop-field") el.addEventListener("input", () => {
+      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      entry.sets[Number(el.dataset.set)].drops[Number(el.dataset.drop)][el.dataset.field] = el.value;
+      saveActiveWorkout();
+    });
+
+    // Routines
+    if (action === "new-routine") el.addEventListener("click", () => { routineDraft = { id:null, name:"", exercises:[] }; render(); });
+    if (action === "edit-routine") el.addEventListener("click", () => {
+      const r = state.routines.find(r => r.id === el.dataset.id);
+      routineDraft = JSON.parse(JSON.stringify(r));
+      render();
+    });
+    if (action === "delete-routine") el.addEventListener("click", () => {
+      if (confirm("Delete this routine?")) {
+        state.routines = state.routines.filter(r => r.id !== el.dataset.id);
+        persist(["routines"]); render();
+      }
+    });
+    if (action === "draft-add-exercise") el.addEventListener("click", () => openDraftExercisePicker());
+    if (action === "draft-add-cardio") el.addEventListener("click", () => openDraftCardioModal());
+    if (action === "draft-pick-exercise") el.addEventListener("click", () => {
+      routineDraft.exercises.push({ type:"strength", exerciseId: el.dataset.id, targetSets:"", targetReps:"", supersetGroup:null });
+      closeModal(); render();
+    });
+    if (action === "draft-save-cardio") el.addEventListener("click", () => {
+      const name = document.getElementById("draftCardioActivity").value;
+      routineDraft.exercises.push({ type:"cardio", name, supersetGroup:null });
+      closeModal(); render();
+    });
+    if (action === "draft-toggle-superset") el.addEventListener("click", () => {
+      toggleDraftSuperset(Number(el.dataset.idx));
+      render();
+    });
+    if (action === "draft-remove-exercise") el.addEventListener("click", () => {
+      const removed = routineDraft.exercises.splice(Number(el.dataset.idx), 1)[0];
+      if (removed && removed.supersetGroup) {
+        const stillShared = routineDraft.exercises.some(it => it.supersetGroup === removed.supersetGroup);
+        if (!stillShared) {
+          routineDraft.exercises.forEach(it => { if (it.supersetGroup === removed.supersetGroup) it.supersetGroup = null; });
+        }
+      }
+      render();
+    });
+    if (action === "cancel-routine") el.addEventListener("click", () => { routineDraft = null; render(); });
+    if (action === "save-routine") el.addEventListener("click", () => {
+      const name = document.getElementById("routineName").value.trim();
+      if (!name) { alert("Please name your routine."); return; }
+      routineDraft.name = name;
+      if (routineDraft.id) {
+        const i = state.routines.findIndex(r => r.id === routineDraft.id);
+        state.routines[i] = routineDraft;
+      } else {
+        routineDraft.id = uid();
+        state.routines.push(routineDraft);
+      }
+      persist(["routines"]);
+      routineDraft = null;
+      render();
+    });
+
+    // History
+    if (action === "history-mode") el.addEventListener("click", () => { historyMode = el.dataset.mode; render(); });
+    if (action === "toggle-workout") el.addEventListener("click", () => {
+      expandedWorkoutId = expandedWorkoutId === el.dataset.id ? null : el.dataset.id;
+      render();
+    });
+
+    // Body composition
+    if (action === "bm-add-row") el.addEventListener("click", () => { bodyMetricDraftRows.push({ label:"", value:"" }); render(); });
+    if (action === "bm-remove-row") el.addEventListener("click", () => { bodyMetricDraftRows.splice(Number(el.dataset.idx), 1); render(); });
+    if (action === "bm-row-field") el.addEventListener("input", () => {
+      bodyMetricDraftRows[Number(el.dataset.idx)][el.dataset.field] = el.value;
+    });
+    if (action === "save-body-metric") el.addEventListener("click", () => {
+      const date = document.getElementById("bmDate").value || todayISODate();
+      const height = document.getElementById("bmHeight").value.trim();
+      const weight = document.getElementById("bmWeight").value.trim();
+      const measurements = {};
+      bodyMetricDraftRows.forEach(r => { if (r.label.trim()) measurements[r.label.trim()] = r.value.trim(); });
+      state.bodyMetrics.push({ id: uid(), date, height, weight, measurements });
+      persist(["bodyMetrics"]);
+      bodyMetricDraftRows = [];
+      render();
+    });
+    if (action === "delete-body-metric") el.addEventListener("click", () => {
+      if (confirm("Delete this entry?")) {
+        state.bodyMetrics = state.bodyMetrics.filter(m => m.id !== el.dataset.id);
+        persist(["bodyMetrics"]);
+        render();
+      }
+    });
+    if (action === "add-body-photo") el.addEventListener("click", () => document.getElementById("bodyPhotoInput").click());
+    if (action === "view-photo") el.addEventListener("click", () => openPhotoModal(el.dataset.id));
+    if (action === "delete-photo") el.addEventListener("click", () => {
+      if (confirm("Delete this photo?")) {
+        dbDeletePhoto(el.dataset.id).then(loadPhotos).then(() => { closeModal(); render(); });
+      }
+    });
+
+    // Suggestions
+    if (action === "get-suggestions-general") el.addEventListener("click", () => generateSuggestions("general"));
+    if (action === "get-suggestions-routine") el.addEventListener("click", () => {
+      const r = state.routines.find(r => r.id === el.dataset.id);
+      if (r) generateSuggestions(r);
+    });
+
+    // Settings
+    if (action === "save-api-key") el.addEventListener("click", () => {
+      state.settings.apiKey = document.getElementById("apiKeyInput").value.trim();
+      persist(["settings"]);
+      alert("API key saved.");
+    });
+    if (action === "clear-all-data") el.addEventListener("click", () => {
+      if (confirm("This will permanently erase all workouts, routines, body metrics, photos, and settings on this device. Continue?")) {
+        localStorage.clear();
+        indexedDB.deleteDatabase(PHOTO_DB_NAME);
+        location.reload();
+      }
+    });
+  });
+
+  const histSelect = root.querySelector("#historyExerciseSelect");
+  if (histSelect && !histSelect.dataset.wired) {
+    histSelect.dataset.wired = "1";
+    histSelect.addEventListener("change", () => { selectedHistoryExercise = histSelect.value; render(); });
+  }
+
+  const photoInput = root.querySelector("#bodyPhotoInput");
+  if (photoInput && !photoInput.dataset.wired) {
+    photoInput.dataset.wired = "1";
+    photoInput.addEventListener("change", () => {
+      const file = photoInput.files[0];
+      if (!file) return;
+      compressImage(file)
+        .then(blob => dbAddPhoto({ id: uid(), date: new Date().toISOString(), blob }))
+        .then(loadPhotos)
+        .then(render)
+        .catch(err => alert("Couldn't save photo: " + err.message));
+    });
+  }
+}
+
+render();
+loadPhotos().then(() => { if (state.tab === "history") render(); }).catch(() => {});
+</script>
+</body>
+</html>
