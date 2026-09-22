@@ -652,6 +652,7 @@ let state = {
   settings: store.get("settings", { apiKey: "" }),
   bodyMetrics: store.get("bodyMetrics", []),
   suggestions: store.get("suggestions", { general: null, byRoutine: {} }),
+  calorieLog: store.get("calorieLog", { currentDate: todayISODate(), messages: [], history: [] }),
   photosCache: [],
   tab: "train",
 };
@@ -749,6 +750,14 @@ function compressImage(file, maxDim, quality) {
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
 }
 let photoObjectUrls = [];
@@ -1549,28 +1558,58 @@ function buildTrainingSummary() {
   return lines.join("\n");
 }
 
-async function callClaudeAPI(systemPrompt, userText) {
+async function callClaudeAPI(systemPrompt, content, maxTokens) {
   const key = state.settings.apiKey;
   if (!key) { const e = new Error("No API key set."); e.code = "NO_KEY"; throw e; }
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 1200,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userText }]
-    })
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`API error ${res.status}: ${errText.slice(0, 300)}`);
+
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: maxTokens || 1200,
+        system: systemPrompt,
+        messages: [{ role: "user", content }]
+      })
+    });
+  } catch (networkErr) {
+    const e = new Error("Couldn't reach Claude — check your internet connection and try again.");
+    e.code = "NETWORK";
+    throw e;
   }
+
+  if (!res.ok) {
+    let friendly = `Claude API error (${res.status}).`;
+    try {
+      const errJson = await res.json();
+      const type = errJson && errJson.error && errJson.error.type;
+      const msg = (errJson && errJson.error && errJson.error.message) || "";
+      if (type === "authentication_error") {
+        friendly = "Your API key was rejected by Anthropic. Go to console.anthropic.com → API Keys, copy the FULL key again (it starts with sk-ant-), and re-paste it into Settings — the current one saved isn't valid.";
+      } else if (type === "permission_error") {
+        friendly = "Your API key doesn't have permission to do this — check your Anthropic Console account/workspace.";
+      } else if (type === "rate_limit_error") {
+        friendly = "Hit a rate limit with Claude — wait a moment and try again.";
+      } else if (type === "overloaded_error") {
+        friendly = "Claude's servers are busy right now — try again in a moment.";
+      } else if (/credit|billing/i.test(msg)) {
+        friendly = "Your Anthropic account may be out of credits — check billing at console.anthropic.com.";
+      } else if (msg) {
+        friendly = msg;
+      }
+    } catch (parseErr) { /* keep default friendly message */ }
+    const e = new Error(friendly);
+    e.code = "API_ERROR";
+    throw e;
+  }
+
   const data = await res.json();
   return (data.content || []).map(b => b.text || "").join("");
 }
@@ -1643,22 +1682,148 @@ async function generateSuggestions(target) {
     }
     persist(["suggestions"]);
   } catch (err) {
-    alert(err.code === "NO_KEY" ? "Add your Claude API key in Settings first." : "Couldn't get suggestions: " + err.message);
+    alert(err.code === "NO_KEY" ? "Add your Claude API key in Settings first." : err.message);
   } finally {
     suggestionsLoading = null;
     render();
   }
 }
 
-/* ================= CALORIES TAB (placeholder — built next) ================= */
-function renderCalories() {
+/* ================= CALORIES TAB (AI chat) ================= */
+const CALORIE_SYSTEM_PROMPT = `You are a calorie-tracking assistant inside a personal fitness app. The user will send a short description of food and/or a photo of a meal, possibly throughout the day. Estimate the total calories as best you can from whatever is given — never refuse, always give your best estimate even from a vague description. Respond like this:
+- One or two short, friendly sentences: what you see/read and a brief reasoning for the estimate.
+- Then, alone on the final line, exactly this format with nothing else on that line: CALORIES: <a whole number>
+Always include that CALORIES line. Do not use markdown formatting.`;
+
+let calorieDraftImage = null;
+let calorieSending = false;
+let expandedCalorieDayIdx = null;
+
+function rolloverCalorieDayIfNeeded() {
+  const today = todayISODate();
+  if (state.calorieLog.currentDate !== today) {
+    if (state.calorieLog.messages.length) {
+      const totalCalories = state.calorieLog.messages.reduce((sum, m) => sum + (m.calories || 0), 0);
+      state.calorieLog.history.unshift({ date: state.calorieLog.currentDate, messages: state.calorieLog.messages, totalCalories });
+    }
+    state.calorieLog.currentDate = today;
+    state.calorieLog.messages = [];
+    persist(["calorieLog"]);
+  }
+}
+
+function renderChatMessage(m) {
+  const isUser = m.role === "user";
   return `
-    <div class="card">
-      <h2>🍽️ AI Calorie Chat</h2>
-      <p class="muted">Coming up next: send a photo or description of what you ate and get an instant calorie estimate logged to your day.</p>
-      <p class="muted">This feature calls Claude's AI, so it needs an API key first — add yours in the <strong>Settings</strong> tab, then this screen goes live.</p>
+    <div class="row" style="justify-content:${isUser ? "flex-end" : "flex-start"}; margin-bottom:12px;">
+      <div style="max-width:82%; background:${isUser ? "var(--blue)" : "var(--panel-2)"}; border:1px solid ${isUser ? "transparent" : "var(--border)"}; border-radius:14px; padding:10px 14px;">
+        ${m.imageDataUrl ? `<img src="${m.imageDataUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;display:block;">` : ""}
+        <div style="white-space:pre-wrap;">${escapeHtml(m.text)}</div>
+        ${m.calories != null ? `<div class="muted" style="margin-top:6px;">~${m.calories.toLocaleString()} cal</div>` : ""}
+      </div>
     </div>
   `;
+}
+
+function renderPastCalorieDays() {
+  if (!state.calorieLog.history.length) return "";
+  return `
+    <h3 style="margin:18px 0 8px 4px;">Past Days</h3>
+    ${state.calorieLog.history.map((d, i) => `
+      <div class="card">
+        <div class="list-item" data-action="toggle-calorie-day" data-idx="${i}">
+          <div>${fmtDate(d.date)}</div>
+          <div class="muted">${d.totalCalories.toLocaleString()} cal</div>
+        </div>
+        ${expandedCalorieDayIdx === i ? d.messages.map(renderChatMessage).join("") : ""}
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderCalories() {
+  rolloverCalorieDayIfNeeded();
+
+  if (!state.settings.apiKey) {
+    return `
+      <div class="card">
+        <h2>🍽️ AI Calorie Chat</h2>
+        <p class="muted">Send a photo or description of what you ate and get an instant calorie estimate logged to your day.</p>
+        <p class="muted">Add your Claude API key in <strong>Settings</strong> first, then come back here.</p>
+      </div>
+    `;
+  }
+
+  const total = state.calorieLog.messages.reduce((s, m) => s + (m.calories || 0), 0);
+
+  return `
+    <div class="card">
+      <div class="row between">
+        <h2 style="margin:0;">Today</h2>
+        <div class="muted">${fmtDate(state.calorieLog.currentDate)}</div>
+      </div>
+      <div class="timer" style="font-size:34px;">${total.toLocaleString()} <span class="muted" style="font-size:16px;">cal</span></div>
+    </div>
+
+    <div class="card">
+      ${state.calorieLog.messages.length ? state.calorieLog.messages.map(renderChatMessage).join("") : `<div class="empty">Tell me what you ate, or send a photo, and I'll estimate the calories.</div>`}
+    </div>
+
+    <div class="card">
+      ${calorieDraftImage ? `
+        <div style="position:relative; display:inline-block; margin-bottom:10px;">
+          <img src="${calorieDraftImage}" style="max-width:130px; border-radius:10px; display:block;">
+          <button class="btn danger small" style="position:absolute; top:-10px; right:-10px; border-radius:50%; width:30px; height:30px; padding:0;" data-action="remove-calorie-photo">✕</button>
+        </div>
+      ` : ""}
+      <input type="file" accept="image/*" id="calorieChatPhotoInput" style="display:none;">
+      <div class="row">
+        <button class="btn ghost" data-action="add-calorie-photo" title="Add photo">📷</button>
+        <input class="grow" id="calorieChatText" placeholder="What did you eat?" ${calorieSending ? "disabled" : ""}>
+        <button class="btn accent" data-action="send-calorie-message" ${calorieSending ? "disabled" : ""}>${calorieSending ? "…" : "Send"}</button>
+      </div>
+    </div>
+
+    ${renderPastCalorieDays()}
+  `;
+}
+
+async function sendCalorieMessage() {
+  const textInput = document.getElementById("calorieChatText");
+  const text = textInput ? textInput.value.trim() : "";
+  const image = calorieDraftImage;
+  if (!text && !image) return;
+
+  state.calorieLog.messages.push({ id: uid(), role: "user", text: text || "(photo)", imageDataUrl: image || null });
+  calorieDraftImage = null;
+  calorieSending = true;
+  persist(["calorieLog"]);
+  render();
+
+  try {
+    const contentBlocks = [];
+    if (image) {
+      const parts = image.match(/^data:([^;]+);base64,(.*)$/);
+      if (parts) contentBlocks.push({ type: "image", source: { type: "base64", media_type: parts[1], data: parts[2] } });
+    }
+    contentBlocks.push({ type: "text", text: text || "What did I eat? Estimate the calories from the photo." });
+
+    const reply = await callClaudeAPI(CALORIE_SYSTEM_PROMPT, contentBlocks, 500);
+    const match = reply.match(/CALORIES:\s*(\d+)/i);
+    const calories = match ? Number(match[1]) : null;
+    const displayText = reply.replace(/CALORIES:\s*\d+/i, "").trim();
+    state.calorieLog.messages.push({ id: uid(), role: "assistant", text: displayText || reply, calories });
+  } catch (err) {
+    state.calorieLog.messages.push({
+      id: uid(), role: "assistant",
+      text: "⚠️ " + (err.code === "NO_KEY" ? "Add your API key in Settings first." : err.message),
+      calories: null,
+    });
+  } finally {
+    calorieSending = false;
+    persist(["calorieLog"]);
+    render();
+  }
 }
 
 /* ================= SETTINGS TAB ================= */
@@ -1898,6 +2063,16 @@ function wireDynamicHandlers(root) {
     });
     if (action === "export-backup") el.addEventListener("click", () => exportBackup());
     if (action === "restore-backup") el.addEventListener("click", () => document.getElementById("restoreInput").click());
+
+    // Calorie chat
+    if (action === "add-calorie-photo") el.addEventListener("click", () => document.getElementById("calorieChatPhotoInput").click());
+    if (action === "remove-calorie-photo") el.addEventListener("click", () => { calorieDraftImage = null; render(); });
+    if (action === "send-calorie-message") el.addEventListener("click", () => sendCalorieMessage());
+    if (action === "toggle-calorie-day") el.addEventListener("click", () => {
+      const idx = Number(el.dataset.idx);
+      expandedCalorieDayIdx = expandedCalorieDayIdx === idx ? null : idx;
+      render();
+    });
   });
 
   const histSelect = root.querySelector("#historyExerciseSelect");
@@ -1927,6 +2102,25 @@ function wireDynamicHandlers(root) {
       const file = restoreInput.files[0];
       if (file) importBackup(file);
     });
+  }
+
+  const calorieChatPhotoInput = root.querySelector("#calorieChatPhotoInput");
+  if (calorieChatPhotoInput && !calorieChatPhotoInput.dataset.wired) {
+    calorieChatPhotoInput.dataset.wired = "1";
+    calorieChatPhotoInput.addEventListener("change", () => {
+      const file = calorieChatPhotoInput.files[0];
+      if (!file) return;
+      compressImage(file, 1024, 0.8)
+        .then(blobToDataURL)
+        .then(dataUrl => { calorieDraftImage = dataUrl; render(); })
+        .catch(err => alert("Couldn't attach photo: " + err.message));
+    });
+  }
+
+  const calorieChatText = root.querySelector("#calorieChatText");
+  if (calorieChatText && !calorieChatText.dataset.wired) {
+    calorieChatText.dataset.wired = "1";
+    calorieChatText.addEventListener("keydown", (e) => { if (e.key === "Enter") sendCalorieMessage(); });
   }
 }
 
