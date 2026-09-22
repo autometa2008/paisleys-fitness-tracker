@@ -666,12 +666,18 @@ let state = {
   bodyMetrics: store.get("bodyMetrics", []),
   suggestions: store.get("suggestions", { general: null, byRoutine: {} }),
   calorieLog: store.get("calorieLog", { currentDate: todayISODate(), messages: [], history: [] }),
-  nutritionGoals: store.get("nutritionGoals", { protein: 120, carbs: 150, fat: 55, fiber: 28 }),
+  nutritionGoals: store.get("nutritionGoals", { protein: 120, carbs: 150, fat: 55, fiber: 14 }),
   photosCache: [],
   tab: "train",
 };
 
 seedDefaultRoutines();
+
+// One-time migration: fiber goal default was lowered from 28g to 14g.
+if (state.nutritionGoals.fiber === 28) {
+  state.nutritionGoals.fiber = 14;
+  persist(["nutritionGoals"]);
+}
 
 function allExercises() { return [...BUILTIN_EXERCISES, ...state.customExercises]; }
 function exerciseById(id) { return allExercises().find(e => e.id === id); }
@@ -1622,9 +1628,19 @@ function buildTrainingSummary() {
   return lines.join("\n");
 }
 
-async function callClaudeAPI(systemPrompt, content, maxTokens) {
+async function callClaudeAPI(systemPrompt, messages, opts) {
+  opts = opts || {};
   const key = state.settings.apiKey;
   if (!key) { const e = new Error("No API key set."); e.code = "NO_KEY"; throw e; }
+
+  const body = {
+    model: "claude-sonnet-5",
+    max_tokens: opts.maxTokens || 1200,
+    system: systemPrompt,
+    messages,
+  };
+  if (opts.tools) body.tools = opts.tools;
+  if (opts.toolChoice) body.tool_choice = opts.toolChoice;
 
   let res;
   try {
@@ -1636,12 +1652,7 @@ async function callClaudeAPI(systemPrompt, content, maxTokens) {
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: maxTokens || 1200,
-        system: systemPrompt,
-        messages: [{ role: "user", content }]
-      })
+      body: JSON.stringify(body)
     });
   } catch (networkErr) {
     const e = new Error("Couldn't reach Claude — check your internet connection and try again.");
@@ -1675,6 +1686,10 @@ async function callClaudeAPI(systemPrompt, content, maxTokens) {
   }
 
   const data = await res.json();
+  if (opts.tools) {
+    const toolUse = (data.content || []).find(b => b.type === "tool_use");
+    if (toolUse) return toolUse.input;
+  }
   return (data.content || []).map(b => b.text || "").join("");
 }
 
@@ -1738,7 +1753,7 @@ async function generateSuggestions(target) {
     const userText = target === "general"
       ? `Here is my current training data:\n\n${summary}\n\nGive me an overall read on my training: which muscle groups need more attention, which lifts look stalled and what to do about it, and what I should prioritize over the next couple weeks.`
       : `Here is my current training data:\n\n${summary}\n\nFocus specifically on this routine: "${target.name}" (exercises: ${target.exercises.map(routineItemName).join(", ")}). Suggest specific edits to this routine — progressive overload on specific exercises, anything to swap or add, given how it's been going.`;
-    const text = await callClaudeAPI(SUGGESTIONS_SYSTEM_PROMPT, userText);
+    const text = await callClaudeAPI(SUGGESTIONS_SYSTEM_PROMPT, [{ role: "user", content: userText }]);
     if (target === "general") {
       state.suggestions.general = { text, generatedAt: new Date().toISOString() };
     } else {
@@ -1754,15 +1769,50 @@ async function generateSuggestions(target) {
 }
 
 /* ================= CALORIES TAB (AI chat) ================= */
-const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user will send a short description of food and/or a photo of a meal, possibly throughout the day. Estimate as best you can from whatever is given — never refuse, always give your best estimate even from a vague description. Respond like this:
-- One or two short, friendly sentences: what you see/read and a brief reasoning for the estimate.
-- Then, on their own lines at the very end, exactly this format with nothing else on those lines and nothing after them:
-CALORIES: <whole number>
-PROTEIN: <whole number>
-CARBS: <whole number>
-FAT: <whole number>
-FIBER: <whole number>
-All five values are grams except CALORIES. Always include all five lines, even if you have to roughly estimate some of them. Do not use markdown formatting.`;
+const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or a photo of a meal, one meal/snack at a time, possibly several times a day. For every message, estimate that specific meal's calories, protein, carbs, fat, and fiber as best you can from whatever is given, and call the log_meal tool with your best estimate for all five numbers — never refuse and never leave one blank, even if you have to roughly guess (e.g. a vague "I had a sandwich" still gets a real numeric guess for all five, using a typical/average version of that food).
+
+You have the conversation so far (today's earlier meals) and a summary of recent prior days below — use both as real memory. If the user references something they already told you ("same as yesterday", "same lunch as before", "like I had this morning"), look it up in that context and reuse those actual numbers rather than guessing fresh, and say in your summary what you matched it to.`;
+
+const LOG_MEAL_TOOL = {
+  name: "log_meal",
+  description: "Log the nutrition estimate for the meal/snack the user just described or photographed.",
+  input_schema: {
+    type: "object",
+    properties: {
+      summary: { type: "string", description: "One short, friendly sentence: what this meal is and, if relevant, how you estimated it (e.g. matched to a prior day)." },
+      calories: { type: "integer", description: "Estimated total calories for this meal." },
+      protein_g: { type: "number", description: "Estimated grams of protein for this meal." },
+      carbs_g: { type: "number", description: "Estimated grams of carbohydrates for this meal." },
+      fat_g: { type: "number", description: "Estimated grams of fat for this meal." },
+      fiber_g: { type: "number", description: "Estimated grams of fiber for this meal." },
+    },
+    required: ["summary", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
+  },
+};
+
+function buildRecentEatingContext() {
+  if (!state.calorieLog.history.length) return "";
+  const days = state.calorieLog.history.slice(0, 5).map(d => {
+    const items = d.messages.filter(m => m.role === "user").map(m => `"${m.text}"`).join(", ");
+    return `${fmtDate(d.date)}: ate ${items || "(no description saved)"} — totaled about ${d.totalCalories} cal.`;
+  });
+  return `\n\nRECENT DAYS (most recent first, for "same as yesterday"-type references):\n${days.join("\n")}`;
+}
+
+function calorieMessagesForAPI() {
+  return state.calorieLog.messages.map(m => {
+    if (m.role === "user") {
+      const blocks = [];
+      if (m.imageDataUrl) {
+        const parts = m.imageDataUrl.match(/^data:([^;]+);base64,(.*)$/);
+        if (parts) blocks.push({ type: "image", source: { type: "base64", media_type: parts[1], data: parts[2] } });
+      }
+      blocks.push({ type: "text", text: m.text });
+      return { role: "user", content: blocks };
+    }
+    return { role: "assistant", content: m.text };
+  });
+}
 
 let calorieDraftImage = null;
 let calorieSending = false;
@@ -1914,22 +1964,19 @@ async function sendCalorieMessage() {
   render();
 
   try {
-    const contentBlocks = [];
-    if (image) {
-      const parts = image.match(/^data:([^;]+);base64,(.*)$/);
-      if (parts) contentBlocks.push({ type: "image", source: { type: "base64", media_type: parts[1], data: parts[2] } });
-    }
-    contentBlocks.push({ type: "text", text: text || "What did I eat? Estimate the calories from the photo." });
+    const systemPrompt = CALORIE_SYSTEM_PROMPT + buildRecentEatingContext();
+    const messages = calorieMessagesForAPI(); // includes the user turn just pushed above, plus all of today's earlier turns
 
-    const reply = await callClaudeAPI(CALORIE_SYSTEM_PROMPT, contentBlocks, 500);
-    const grab = (label) => {
-      const m = reply.match(new RegExp(label + ":\\s*(\\d+(?:\\.\\d+)?)", "i"));
-      return m ? Number(m[1]) : null;
-    };
-    const macros = { calories: grab("CALORIES"), protein: grab("PROTEIN"), carbs: grab("CARBS"), fat: grab("FAT"), fiber: grab("FIBER") };
-    const displayText = reply.replace(/CALORIES:\s*\d+(\.\d+)?/i, "").replace(/PROTEIN:\s*\d+(\.\d+)?/i, "")
-      .replace(/CARBS:\s*\d+(\.\d+)?/i, "").replace(/FAT:\s*\d+(\.\d+)?/i, "").replace(/FIBER:\s*\d+(\.\d+)?/i, "").trim();
-    state.calorieLog.messages.push({ id: uid(), role: "assistant", text: displayText || reply, ...macros });
+    const result = await callClaudeAPI(systemPrompt, messages, {
+      maxTokens: 500,
+      tools: [LOG_MEAL_TOOL],
+      toolChoice: { type: "tool", name: "log_meal" },
+    });
+
+    state.calorieLog.messages.push({
+      id: uid(), role: "assistant", text: result.summary || "Logged.",
+      calories: result.calories, protein: result.protein_g, carbs: result.carbs_g, fat: result.fat_g, fiber: result.fiber_g,
+    });
   } catch (err) {
     state.calorieLog.messages.push({
       id: uid(), role: "assistant",
