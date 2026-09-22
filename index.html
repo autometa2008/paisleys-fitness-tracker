@@ -1,6 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+  // GitHub Pages caches this file for 10 minutes (Cache-Control: max-age=600),
+  // which meant reopening the home-screen app soon after an update could still
+  // show the old version. This forces every fresh app-launch (no ?_v= yet) to
+  // re-fetch with a cache-busting query param, guaranteeing the latest build.
+  if (!location.search.includes('_v=')) {
+    location.replace(location.pathname + '?_v=' + Date.now());
+  }
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
