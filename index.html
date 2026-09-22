@@ -679,6 +679,11 @@ if (state.nutritionGoals.fiber === 28) {
   persist(["nutritionGoals"]);
 }
 
+// Archive yesterday's (or any past) unfinished calorie day on load, not just
+// when the Calories tab happens to be opened — otherwise History > Body can
+// show stale/missing "Eating Days" if Calories wasn't visited first today.
+rolloverCalorieDayIfNeeded();
+
 function allExercises() { return [...BUILTIN_EXERCISES, ...state.customExercises]; }
 function exerciseById(id) { return allExercises().find(e => e.id === id); }
 
@@ -1347,6 +1352,7 @@ let expandedWorkoutId = null;
 let selectedHistoryExercise = null;
 
 function renderHistory() {
+  rolloverCalorieDayIfNeeded();
   return `
     ${renderMuscleSummaryCard()}
     <div class="card row wrap">
