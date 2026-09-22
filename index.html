@@ -667,6 +667,7 @@ let state = {
   suggestions: store.get("suggestions", { general: null, byRoutine: {} }),
   calorieLog: store.get("calorieLog", { currentDate: todayISODate(), messages: [], history: [] }),
   nutritionGoals: store.get("nutritionGoals", { protein: 120, carbs: 150, fat: 55, fiber: 14 }),
+  manualMaxes: store.get("manualMaxes", []),
   photosCache: [],
   tab: "train",
 };
@@ -881,7 +882,7 @@ async function importBackup(file) {
 }
 
 /* ================= RENDER ROOT ================= */
-const MENU_TABS = ["routines", "history", "suggestions", "settings"];
+const MENU_TABS = ["routines", "history", "suggestions", "max", "settings"];
 
 function render() {
   document.getElementById("dateLabel").textContent = todayLabel();
@@ -895,6 +896,7 @@ function render() {
   else if (state.tab === "routines") app.innerHTML = renderRoutines();
   else if (state.tab === "history") app.innerHTML = renderHistory();
   else if (state.tab === "suggestions") app.innerHTML = renderSuggestions();
+  else if (state.tab === "max") app.innerHTML = renderMax();
   else if (state.tab === "calories") app.innerHTML = renderCalories();
   else if (state.tab === "settings") app.innerHTML = renderSettings();
   wireTabHandlers();
@@ -905,6 +907,7 @@ function openMenuSheet() {
     { tab: "routines", icon: "📋", label: "Routines" },
     { tab: "history", icon: "📈", label: "History" },
     { tab: "suggestions", icon: "🧠", label: "Suggestions" },
+    { tab: "max", icon: "🏆", label: "Max" },
     { tab: "settings", icon: "⚙️", label: "Settings" },
   ];
   showModal(`
@@ -1774,6 +1777,149 @@ async function generateSuggestions(target) {
   }
 }
 
+/* ================= MAX TAB ================= */
+let maxTab = "lift"; // "lift" | "custom"
+let manualMaxSubView = "current"; // "current" | "history"
+let pendingManualMaxExerciseId = null;
+
+function bestSetForExercise(exerciseId) {
+  let best = null;
+  state.workouts.forEach(w => {
+    w.entries.forEach(e => {
+      if (e.kind !== "strength" || e.exerciseId !== exerciseId) return;
+      e.sets.forEach(s => {
+        const wt = Number(s.weight) || 0;
+        if (wt > 0 && (!best || wt > best.weight)) best = { weight: wt, reps: Number(s.reps) || 0, date: w.date };
+        (s.drops || []).forEach(d => {
+          const dwt = Number(d.weight) || 0;
+          if (dwt > 0 && (!best || dwt > best.weight)) best = { weight: dwt, reps: Number(d.reps) || 0, date: w.date };
+        });
+      });
+    });
+  });
+  return best;
+}
+
+function renderMax() {
+  return `
+    <div class="card row">
+      <button class="btn ${maxTab==='lift'?'accent':'ghost'} grow small" data-action="max-tab" data-tab="lift">Lift Maxes</button>
+      <button class="btn ${maxTab==='custom'?'accent':'ghost'} grow small" data-action="max-tab" data-tab="custom">Just Maxes</button>
+    </div>
+    ${maxTab === "lift" ? renderLiftMaxes() : renderJustMaxes()}
+  `;
+}
+
+function renderLiftMaxes() {
+  if (!state.routines.length) return `<div class="empty">No routines yet — build one in the Routines tab.</div>`;
+  return state.routines.map(r => {
+    const strengthItems = r.exercises.filter(e => e.type !== "cardio");
+    const rows = strengthItems.map(e => {
+      const ex = exerciseById(e.exerciseId);
+      if (!ex) return "";
+      const best = bestSetForExercise(ex.id);
+      return `
+        <div class="muscle-row">
+          <div>${escapeHtml(ex.name)}</div>
+          <div class="muted">${best ? `${best.weight} lb × ${best.reps} — ${fmtDate(best.date)}` : "Not logged yet"}</div>
+        </div>
+      `;
+    }).join("");
+    return `
+      <div class="card">
+        <h2>${escapeHtml(r.name)}</h2>
+        ${rows || `<div class="empty">No strength exercises in this routine.</div>`}
+      </div>
+    `;
+  }).join("");
+}
+
+function renderJustMaxes() {
+  const byExercise = {};
+  state.manualMaxes.forEach(m => {
+    if (!byExercise[m.exerciseId]) byExercise[m.exerciseId] = [];
+    byExercise[m.exerciseId].push(m);
+  });
+  const currentRows = Object.values(byExercise)
+    .map(entries => entries.reduce((a, b) => Number(b.weight) > Number(a.weight) ? b : a))
+    .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
+  const historyRows = state.manualMaxes.slice().sort((a, b) => b.date.localeCompare(a.date));
+
+  return `
+    <div class="card row between">
+      <h2 style="margin:0;">Just Maxes</h2>
+      <button class="btn accent small" data-action="open-add-max">+ Add Max</button>
+    </div>
+    <div class="card row">
+      <button class="btn ${manualMaxSubView==='current'?'accent':'ghost'} grow small" data-action="max-subview" data-view="current">Current</button>
+      <button class="btn ${manualMaxSubView==='history'?'accent':'ghost'} grow small" data-action="max-subview" data-view="history">History</button>
+    </div>
+    ${manualMaxSubView === "current" ? (
+      currentRows.length ? currentRows.map(r => `
+        <div class="card-2">
+          <div class="row between"><strong>${escapeHtml(r.exerciseName)}</strong><span class="muted">${fmtDate(r.date)}</span></div>
+          <div class="muted">${r.weight} lb × ${r.reps}</div>
+        </div>
+      `).join("") : `<div class="empty">No maxes logged yet. Tap + Add Max to log your first one.</div>`
+    ) : (
+      historyRows.length ? historyRows.map(r => `
+        <div class="card-2">
+          <div class="row between">
+            <strong>${escapeHtml(r.exerciseName)}</strong>
+            <div class="row">
+              <span class="muted">${fmtDate(r.date)}</span>
+              <button class="btn ghost small" data-action="delete-manual-max" data-id="${r.id}">✕</button>
+            </div>
+          </div>
+          <div class="muted">${r.weight} lb × ${r.reps}</div>
+        </div>
+      `).join("") : `<div class="empty">No history yet.</div>`
+    )}
+  `;
+}
+
+function openAddMaxModal() {
+  const groupsChips = MUSCLE_GROUPS.map(g => `<span class="chip" data-filter-group="${g}">${g}</span>`).join("");
+  showModal(`
+    <h2>Log a Max</h2>
+    <input class="search-box" id="exerciseSearch" placeholder="Search exercises...">
+    <div class="badge-group" id="groupChips">${groupsChips}</div>
+    <div id="exerciseResults"></div>
+  `);
+  const renderResults = (q, gf) => {
+    const query = (q || "").toLowerCase();
+    const list = allExercises().filter(e => e.name.toLowerCase().includes(query) && (!gf || e.groups.includes(gf)));
+    document.getElementById("exerciseResults").innerHTML = list.map(e => `
+      <div class="list-item" data-action="pick-max-exercise" data-id="${e.id}">
+        <div><div>${escapeHtml(e.name)}</div><div class="muted">${e.groups.join(", ")}</div></div>
+        <div class="btn accent small">Select</div>
+      </div>`).join("") || `<div class="empty">No matches.</div>`;
+  };
+  renderResults("", null);
+  let gf = null;
+  document.getElementById("exerciseSearch").addEventListener("input", e => renderResults(e.target.value, gf));
+  document.querySelectorAll("#groupChips .chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      gf = (gf === chip.dataset.filterGroup) ? null : chip.dataset.filterGroup;
+      document.querySelectorAll("#groupChips .chip").forEach(c => c.classList.toggle("active", c.dataset.filterGroup === gf));
+      renderResults(document.getElementById("exerciseSearch").value, gf);
+    });
+  });
+}
+
+function openMaxDetailsModal(exerciseId) {
+  const ex = exerciseById(exerciseId);
+  if (!ex) return;
+  pendingManualMaxExerciseId = exerciseId;
+  showModal(`
+    <h2>${escapeHtml(ex.name)}</h2>
+    <div class="field"><label>Weight (lb)</label><input id="maxWeight" type="number" placeholder="e.g. 135"></div>
+    <div class="field"><label>Reps</label><input id="maxReps" type="number" inputmode="decimal" value="1" placeholder="1-3"></div>
+    <div class="field"><label>Date</label><input type="date" id="maxDate" value="${todayISODate()}"></div>
+    <button class="btn accent block" data-action="save-manual-max">Save Max</button>
+  `);
+}
+
 /* ================= CALORIES TAB (AI chat) ================= */
 const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or a photo of a meal, one meal/snack at a time, possibly several times a day. For every message, you must call exactly one of your two tools:
 
@@ -2293,6 +2439,32 @@ function wireDynamicHandlers(root) {
     if (action === "get-suggestions-routine") el.addEventListener("click", () => {
       const r = state.routines.find(r => r.id === el.dataset.id);
       if (r) generateSuggestions(r);
+    });
+
+    // Max
+    if (action === "max-tab") el.addEventListener("click", () => { maxTab = el.dataset.tab; render(); });
+    if (action === "max-subview") el.addEventListener("click", () => { manualMaxSubView = el.dataset.view; render(); });
+    if (action === "open-add-max") el.addEventListener("click", () => openAddMaxModal());
+    if (action === "pick-max-exercise") el.addEventListener("click", () => openMaxDetailsModal(el.dataset.id));
+    if (action === "save-manual-max") el.addEventListener("click", () => {
+      const ex = exerciseById(pendingManualMaxExerciseId);
+      if (!ex) return;
+      const weight = document.getElementById("maxWeight").value;
+      const reps = document.getElementById("maxReps").value || "1";
+      const date = document.getElementById("maxDate").value || todayISODate();
+      if (!weight) { alert("Enter a weight."); return; }
+      state.manualMaxes.push({ id: uid(), exerciseId: ex.id, exerciseName: ex.name, weight, reps, date });
+      persist(["manualMaxes"]);
+      pendingManualMaxExerciseId = null;
+      closeModal();
+      render();
+    });
+    if (action === "delete-manual-max") el.addEventListener("click", () => {
+      if (confirm("Delete this max entry?")) {
+        state.manualMaxes = state.manualMaxes.filter(m => m.id !== el.dataset.id);
+        persist(["manualMaxes"]);
+        render();
+      }
     });
 
     // Settings
