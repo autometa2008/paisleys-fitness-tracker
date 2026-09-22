@@ -1634,7 +1634,7 @@ async function callClaudeAPI(systemPrompt, messages, opts) {
   if (!key) { const e = new Error("No API key set."); e.code = "NO_KEY"; throw e; }
 
   const body = {
-    model: "claude-sonnet-5",
+    model: opts.model || "claude-sonnet-5",
     max_tokens: opts.maxTokens || 1200,
     system: systemPrompt,
     messages,
@@ -1688,7 +1688,7 @@ async function callClaudeAPI(systemPrompt, messages, opts) {
   const data = await res.json();
   if (opts.tools) {
     const toolUse = (data.content || []).find(b => b.type === "tool_use");
-    if (toolUse) return toolUse.input;
+    if (toolUse) return { toolName: toolUse.name, input: toolUse.input };
   }
   return (data.content || []).map(b => b.text || "").join("");
 }
@@ -1769,25 +1769,38 @@ async function generateSuggestions(target) {
 }
 
 /* ================= CALORIES TAB (AI chat) ================= */
-const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or a photo of a meal, one meal/snack at a time, possibly several times a day. For every message, estimate that specific meal's calories, protein, carbs, fat, and fiber as best you can from whatever is given, and call the log_meal tool with your best estimate for all five numbers — never refuse and never leave one blank, even if you have to roughly guess (e.g. a vague "I had a sandwich" still gets a real numeric guess for all five, using a typical/average version of that food).
+const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or a photo of a meal, one meal/snack at a time, possibly several times a day. For every message, you must call exactly one of your two tools:
+
+- log_meal: use this when the user is describing a NEW, separate meal or snack you haven't logged yet.
+- edit_last_meal: use this INSTEAD when the user is correcting, clarifying, or changing something about the meal you JUST logged in your previous turn — not adding a new item. Clear signs of this: "actually it was...", "make that...", "I meant...", "no wait...", "that should be...", or any correction to a detail (portion size, an ingredient, a swap) of what you just logged. In that case, re-estimate the FULL corrected totals for that same meal from scratch (don't add a delta on top of the old numbers) — the corrected numbers fully replace the old ones.
+
+Always give your best real numeric estimate for all five fields (calories, protein, carbs, fat, fiber) even from a vague description (e.g. "I had a sandwich" still gets a real guess for all five, using a typical/average version of that food) — never leave one blank and never refuse.
 
 You have the conversation so far (today's earlier meals) and a summary of recent prior days below — use both as real memory. If the user references something they already told you ("same as yesterday", "same lunch as before", "like I had this morning"), look it up in that context and reuse those actual numbers rather than guessing fresh, and say in your summary what you matched it to.`;
 
+const MEAL_TOOL_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string", description: "One short, friendly sentence: what this meal is and, if relevant, how you estimated it (e.g. matched to a prior day, or what you corrected)." },
+    calories: { type: "integer", description: "Estimated total calories for this meal." },
+    protein_g: { type: "number", description: "Estimated grams of protein for this meal." },
+    carbs_g: { type: "number", description: "Estimated grams of carbohydrates for this meal." },
+    fat_g: { type: "number", description: "Estimated grams of fat for this meal." },
+    fiber_g: { type: "number", description: "Estimated grams of fiber for this meal." },
+  },
+  required: ["summary", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
+};
+
 const LOG_MEAL_TOOL = {
   name: "log_meal",
-  description: "Log the nutrition estimate for the meal/snack the user just described or photographed.",
-  input_schema: {
-    type: "object",
-    properties: {
-      summary: { type: "string", description: "One short, friendly sentence: what this meal is and, if relevant, how you estimated it (e.g. matched to a prior day)." },
-      calories: { type: "integer", description: "Estimated total calories for this meal." },
-      protein_g: { type: "number", description: "Estimated grams of protein for this meal." },
-      carbs_g: { type: "number", description: "Estimated grams of carbohydrates for this meal." },
-      fat_g: { type: "number", description: "Estimated grams of fat for this meal." },
-      fiber_g: { type: "number", description: "Estimated grams of fiber for this meal." },
-    },
-    required: ["summary", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
-  },
+  description: "Log the nutrition estimate for a NEW meal/snack the user just described or photographed.",
+  input_schema: MEAL_TOOL_SCHEMA,
+};
+
+const EDIT_MEAL_TOOL = {
+  name: "edit_last_meal",
+  description: "Replace the nutrition estimate for the meal you JUST logged, because the user is correcting or clarifying it rather than describing a new meal. Give the full corrected totals, not a delta.",
+  input_schema: MEAL_TOOL_SCHEMA,
 };
 
 function buildRecentEatingContext() {
@@ -1831,7 +1844,7 @@ function rolloverCalorieDayIfNeeded() {
   }
 }
 
-function renderChatMessage(m) {
+function renderChatMessage(m, editable) {
   const isUser = m.role === "user";
   const macroBits = [
     m.calories != null ? `${m.calories.toLocaleString()} cal` : null,
@@ -1841,7 +1854,8 @@ function renderChatMessage(m) {
     m.fiber != null ? `${m.fiber}g fiber` : null,
   ].filter(Boolean).join(" · ");
   return `
-    <div class="row" style="justify-content:${isUser ? "flex-end" : "flex-start"}; margin-bottom:12px;">
+    <div class="row" style="justify-content:${isUser ? "flex-end" : "flex-start"}; margin-bottom:12px; gap:6px;">
+      ${editable && !isUser ? `<button class="btn ghost small" style="align-self:flex-start;" data-action="delete-calorie-message" data-id="${m.id}" title="Remove this entry">✕</button>` : ""}
       <div style="max-width:82%; background:${isUser ? "var(--blue)" : "var(--panel-2)"}; border:1px solid ${isUser ? "transparent" : "var(--border)"}; border-radius:14px; padding:10px 14px;">
         ${m.imageDataUrl ? `<img src="${m.imageDataUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;display:block;">` : ""}
         <div style="white-space:pre-wrap;">${escapeHtml(m.text)}</div>
@@ -1909,7 +1923,10 @@ function renderCalories() {
     <div class="card">
       <div class="row between">
         <h2 style="margin:0;">Today</h2>
-        <div class="muted">${fmtDate(state.calorieLog.currentDate)}</div>
+        <div class="row">
+          <div class="muted">${fmtDate(state.calorieLog.currentDate)}</div>
+          ${state.calorieLog.messages.length ? `<button class="btn ghost small" data-action="clear-calorie-today">Clear Today</button>` : ""}
+        </div>
       </div>
       <div class="row" style="align-items:flex-end; gap:24px; margin-top:6px;">
         <div>
@@ -1929,7 +1946,7 @@ function renderCalories() {
     </div>
 
     <div class="card">
-      ${state.calorieLog.messages.length ? state.calorieLog.messages.map(renderChatMessage).join("") : `<div class="empty">Tell me what you ate, or send a photo, and I'll estimate the calories.</div>`}
+      ${state.calorieLog.messages.length ? state.calorieLog.messages.map(m => renderChatMessage(m, true)).join("") : `<div class="empty">Tell me what you ate, or send a photo, and I'll estimate the calories.</div>`}
     </div>
 
     <div class="card">
@@ -1967,16 +1984,33 @@ async function sendCalorieMessage() {
     const systemPrompt = CALORIE_SYSTEM_PROMPT + buildRecentEatingContext();
     const messages = calorieMessagesForAPI(); // includes the user turn just pushed above, plus all of today's earlier turns
 
-    const result = await callClaudeAPI(systemPrompt, messages, {
+    const { toolName, input } = await callClaudeAPI(systemPrompt, messages, {
+      model: "claude-opus-5",
       maxTokens: 500,
-      tools: [LOG_MEAL_TOOL],
-      toolChoice: { type: "tool", name: "log_meal" },
+      tools: [LOG_MEAL_TOOL, EDIT_MEAL_TOOL],
+      toolChoice: { type: "any" },
     });
 
-    state.calorieLog.messages.push({
-      id: uid(), role: "assistant", text: result.summary || "Logged.",
-      calories: result.calories, protein: result.protein_g, carbs: result.carbs_g, fat: result.fat_g, fiber: result.fiber_g,
-    });
+    const macroFields = {
+      text: input.summary || (toolName === "edit_last_meal" ? "Updated." : "Logged."),
+      calories: input.calories, protein: input.protein_g, carbs: input.carbs_g, fat: input.fat_g, fiber: input.fiber_g,
+    };
+
+    if (toolName === "edit_last_meal") {
+      const lastAssistantIdx = (() => {
+        for (let i = state.calorieLog.messages.length - 1; i >= 0; i--) {
+          if (state.calorieLog.messages[i].role === "assistant") return i;
+        }
+        return -1;
+      })();
+      if (lastAssistantIdx !== -1) {
+        state.calorieLog.messages[lastAssistantIdx] = { ...state.calorieLog.messages[lastAssistantIdx], ...macroFields };
+      } else {
+        state.calorieLog.messages.push({ id: uid(), role: "assistant", ...macroFields });
+      }
+    } else {
+      state.calorieLog.messages.push({ id: uid(), role: "assistant", ...macroFields });
+    }
   } catch (err) {
     state.calorieLog.messages.push({
       id: uid(), role: "assistant",
@@ -2291,6 +2325,20 @@ function wireDynamicHandlers(root) {
       const idx = Number(el.dataset.idx);
       expandedCalorieDayIdx = expandedCalorieDayIdx === idx ? null : idx;
       render();
+    });
+    if (action === "delete-calorie-message") el.addEventListener("click", () => {
+      if (confirm("Remove this logged entry?")) {
+        state.calorieLog.messages = state.calorieLog.messages.filter(m => m.id !== el.dataset.id);
+        persist(["calorieLog"]);
+        render();
+      }
+    });
+    if (action === "clear-calorie-today") el.addEventListener("click", () => {
+      if (confirm("Clear everything logged today? This can't be undone.")) {
+        state.calorieLog.messages = [];
+        persist(["calorieLog"]);
+        render();
+      }
     });
   });
 
