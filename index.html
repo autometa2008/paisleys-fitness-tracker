@@ -26,16 +26,23 @@
   }
 
   * { box-sizing: border-box; }
-  html, body {
+  html {
+    height: 100%; margin: 0; background: var(--bg);
+  }
+  body {
     margin: 0; padding: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    height: 100%;
     font-size: 18px;
-  }
-  body {
-    padding-bottom: calc(var(--tabbar-h, 110px) + 24px);
+    /* Full-height column shell: topbar, then the one scrollable region, then
+       the tab bar as a real layout row (not a floating overlay) — the only
+       reliable way to avoid content hiding behind a fixed bar on iOS. */
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
     padding-top: env(safe-area-inset-top);
+    overflow: hidden;
   }
   h1,h2,h3,h4 { margin: 0 0 10px 0; font-weight: 700; }
   h1 { font-size: 23px; }
@@ -44,9 +51,16 @@
   p { margin: 0 0 8px 0; }
   a { color: var(--accent); }
 
-  #app { max-width: 640px; margin: 0 auto; padding: 18px; }
+  #app {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 640px; width: 100%; margin: 0 auto; padding: 18px;
+    padding-bottom: 32px;
+  }
 
   .topbar {
+    flex: 0 0 auto;
     max-width: 640px; margin: 0 auto; padding: 16px 18px 12px 18px;
     display:flex; align-items:center; justify-content:space-between;
   }
@@ -103,12 +117,11 @@
   .num { width: 86px; text-align: center; }
 
   .tabs {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    flex: 0 0 auto;
     background: rgba(18,20,28,0.95); backdrop-filter: blur(10px);
     border-top: 1px solid var(--border);
     display: flex;
     padding-bottom: env(safe-area-inset-bottom);
-    z-index: 50;
   }
   .tab {
     flex: 1; text-align: center; padding: 14px 4px 11px 4px; cursor: pointer;
@@ -927,18 +940,19 @@ function renderTrain() {
   }
 
   const w = state.activeWorkout;
-  const elapsed = Date.now() - w.startedAt;
+  const paused = !!w.pausedAt;
   const groups = groupEntriesBySuperset(w.entries);
 
   return `
     <div class="card">
       <div class="row between">
         <div>
-          <div class="muted">${w.routineName || "Freestyle Workout"}</div>
-          <div class="timer" id="liveTimer">${fmtElapsed(elapsed)}</div>
+          <div class="muted">${w.routineName || "Freestyle Workout"}${paused ? " · Paused" : ""}</div>
+          <div class="timer" id="liveTimer" style="${paused ? "opacity:.55;" : ""}">${fmtElapsed(workoutElapsedMs(w))}</div>
         </div>
-        <div class="row">
+        <div class="row wrap" style="justify-content:flex-end;">
           <button class="btn ghost small" data-action="cancel-workout" title="Discard without saving">Cancel</button>
+          <button class="btn ${paused ? "accent" : "ghost"} small" data-action="toggle-pause-workout">${paused ? "Resume" : "Pause"}</button>
           <button class="btn danger" data-action="finish-workout">Finish</button>
         </div>
       </div>
@@ -995,10 +1009,10 @@ function renderExerciseEntry(entry) {
   const setsHtml = entry.sets.map((s, i) => `
     <div class="set-row">
       <div class="idx">${i+1}</div>
-      <input class="num" type="number" inputmode="decimal" placeholder="lb" value="${s.weight ?? ""}"
+      <input class="num" type="number" placeholder="lb" value="${s.weight ?? ""}" title="Negative = assisted (e.g. -20 for assisted pull-ups)"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="weight">
       <span class="muted">×</span>
-      <input class="num" type="number" inputmode="numeric" placeholder="reps" value="${s.reps ?? ""}"
+      <input class="num" type="number" inputmode="decimal" placeholder="reps" value="${s.reps ?? ""}" title="Decimals allowed, e.g. 8.5"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="reps">
       <button class="btn ghost small" data-action="add-drop" data-id="${entry.id}" data-set="${i}" title="Add drop set">+drop</button>
       <button class="btn ghost small" data-action="remove-set" data-id="${entry.id}" data-set="${i}">✕</button>
@@ -1006,10 +1020,10 @@ function renderExerciseEntry(entry) {
     ${(s.drops||[]).map((d,di) => `
       <div class="set-row drop-row">
         <span class="drop-tag">DROP</span>
-        <input class="num" type="number" inputmode="decimal" placeholder="lb" value="${d.weight ?? ""}"
+        <input class="num" type="number" placeholder="lb" value="${d.weight ?? ""}"
           data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="weight">
         <span class="muted">×</span>
-        <input class="num" type="number" inputmode="numeric" placeholder="reps" value="${d.reps ?? ""}"
+        <input class="num" type="number" inputmode="decimal" placeholder="reps" value="${d.reps ?? ""}"
           data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="reps">
         <button class="btn ghost small" data-action="remove-drop" data-id="${entry.id}" data-set="${i}" data-drop="${di}">✕</button>
       </div>
@@ -1036,13 +1050,18 @@ function renderExerciseEntry(entry) {
   `;
 }
 
+function workoutElapsedMs(w) {
+  const end = w.pausedAt || Date.now();
+  return end - w.startedAt - (w.pausedMs || 0);
+}
+
 let timerInterval = null;
 function startTimerTick() {
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     const el = document.getElementById("liveTimer");
-    if (el && state.activeWorkout) el.textContent = fmtElapsed(Date.now() - state.activeWorkout.startedAt);
-    else { clearInterval(timerInterval); timerInterval = null; }
+    if (!el || !state.activeWorkout) { clearInterval(timerInterval); timerInterval = null; return; }
+    if (!state.activeWorkout.pausedAt) el.textContent = fmtElapsed(workoutElapsedMs(state.activeWorkout));
   }, 1000);
 }
 
@@ -1166,6 +1185,8 @@ function startWorkout(routine) {
     routineId: routine ? routine.id : null,
     routineName: routine ? routine.name : null,
     startedAt: Date.now(),
+    pausedAt: null,
+    pausedMs: 0,
     entries: routine ? routine.exercises.map(re => {
       if (re.type === "cardio") {
         return { id: uid(), kind:"cardio", name: re.name, durationMin:"", distance:"", notes:"", supersetGroup: re.supersetGroup || null };
@@ -1182,8 +1203,9 @@ function startWorkout(routine) {
 
 function finishWorkout() {
   const w = state.activeWorkout;
+  if (w.pausedAt) { w.pausedMs = (w.pausedMs || 0) + (Date.now() - w.pausedAt); w.pausedAt = null; }
   w.endedAt = Date.now();
-  w.durationSec = Math.round((w.endedAt - w.startedAt)/1000);
+  w.durationSec = Math.round(workoutElapsedMs(w) / 1000);
   w.date = new Date().toISOString();
   state.workouts.unshift(w);
   state.activeWorkout = null;
@@ -1894,6 +1916,17 @@ function wireDynamicHandlers(root) {
         render();
       }
     });
+    if (action === "toggle-pause-workout") el.addEventListener("click", () => {
+      const w = state.activeWorkout;
+      if (w.pausedAt) {
+        w.pausedMs = (w.pausedMs || 0) + (Date.now() - w.pausedAt);
+        w.pausedAt = null;
+      } else {
+        w.pausedAt = Date.now();
+      }
+      saveActiveWorkout();
+      render();
+    });
     if (action === "open-add-exercise") el.addEventListener("click", () => openAddExerciseModal(null));
     if (action === "open-add-cardio") el.addEventListener("click", () => openAddCardioModal());
     if (action === "open-custom-exercise") el.addEventListener("click", () => openCustomExerciseModal());
@@ -1907,7 +1940,8 @@ function wireDynamicHandlers(root) {
     });
     if (action === "add-set") el.addEventListener("click", () => {
       const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
-      entry.sets.push({ weight:"", reps:"" });
+      const topWeight = entry.sets[0] ? entry.sets[0].weight : "";
+      entry.sets.push({ weight: topWeight || "", reps:"" });
       saveActiveWorkout(); render();
     });
     if (action === "remove-set") el.addEventListener("click", () => {
@@ -1931,7 +1965,25 @@ function wireDynamicHandlers(root) {
     });
     if (action === "set-field") el.addEventListener("input", () => {
       const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
-      entry.sets[Number(el.dataset.set)][el.dataset.field] = el.value;
+      const idx = Number(el.dataset.set);
+      const field = el.dataset.field;
+      entry.sets[idx][field] = el.value;
+
+      if (field === "weight") {
+        if (idx === 0) {
+          // Top set's weight fills every set below that hasn't been manually edited —
+          // update the data and reflect it live in the other inputs without a full
+          // re-render (which would steal focus from whichever field is being typed in).
+          entry.sets.forEach((s, i) => {
+            if (i === 0 || s.weightManual) return;
+            s.weight = el.value;
+            const sib = root.querySelector(`input[data-action="set-field"][data-id="${entry.id}"][data-set="${i}"][data-field="weight"]`);
+            if (sib) sib.value = el.value;
+          });
+        } else {
+          entry.sets[idx].weightManual = true;
+        }
+      }
       saveActiveWorkout();
     });
     if (action === "drop-field") el.addEventListener("input", () => {
@@ -2124,22 +2176,7 @@ function wireDynamicHandlers(root) {
   }
 }
 
-/* Reserve exactly as much bottom space as the tab bar actually takes up on
-   this device/font-size, instead of guessing a fixed pixel number — fixes
-   content getting hidden behind the bar on devices where it renders taller
-   than expected. */
-function syncTabBarHeight() {
-  const tabs = document.querySelector(".tabs");
-  if (!tabs) return;
-  const h = tabs.getBoundingClientRect().height;
-  if (h > 0) document.documentElement.style.setProperty("--tabbar-h", h + "px");
-}
-window.addEventListener("resize", syncTabBarHeight);
-window.addEventListener("orientationchange", () => setTimeout(syncTabBarHeight, 100));
-
 render();
-syncTabBarHeight();
-setTimeout(syncTabBarHeight, 300);
 loadPhotos().then(() => { if (state.tab === "history") render(); }).catch(() => {});
 </script>
 </body>
