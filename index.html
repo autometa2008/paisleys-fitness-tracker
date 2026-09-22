@@ -1514,16 +1514,17 @@ function renderExerciseHistory() {
 
 /* ================= HISTORY TAB: BODY SECTION ================= */
 let bodyMetricDraftRows = [];
+let bodyMetricDraft = { date: "", height: "", weight: "" };
 
 function renderBodySection() {
   const sorted = state.bodyMetrics.slice().sort((a, b) => b.date.localeCompare(a.date));
   return `
     <div class="card">
       <h2>Add Body Metrics</h2>
-      <div class="field"><label>Date</label><input type="date" id="bmDate" value="${todayISODate()}"></div>
+      <div class="field"><label>Date</label><input type="date" id="bmDate" value="${bodyMetricDraft.date || todayISODate()}" data-action="bm-draft-field" data-field="date"></div>
       <div class="row wrap">
-        <div class="field grow"><label>Height</label><input id="bmHeight" placeholder="e.g. 5'6&quot;"></div>
-        <div class="field grow"><label>Weight</label><input id="bmWeight" placeholder="e.g. 142 lb"></div>
+        <div class="field grow"><label>Height</label><input id="bmHeight" placeholder="e.g. 5'6&quot;" value="${escapeAttr(bodyMetricDraft.height)}" data-action="bm-draft-field" data-field="height"></div>
+        <div class="field grow"><label>Weight</label><input id="bmWeight" placeholder="e.g. 142 lb" value="${escapeAttr(bodyMetricDraft.weight)}" data-action="bm-draft-field" data-field="weight"></div>
       </div>
       <label>Measurements (optional)</label>
       ${bodyMetricDraftRows.map((r, i) => `
@@ -2411,6 +2412,9 @@ function wireDynamicHandlers(root) {
     if (action === "bm-row-field") el.addEventListener("input", () => {
       bodyMetricDraftRows[Number(el.dataset.idx)][el.dataset.field] = el.value;
     });
+    if (action === "bm-draft-field") el.addEventListener("input", () => {
+      bodyMetricDraft[el.dataset.field] = el.value;
+    });
     if (action === "save-body-metric") el.addEventListener("click", () => {
       const date = document.getElementById("bmDate").value || todayISODate();
       const height = document.getElementById("bmHeight").value.trim();
@@ -2420,6 +2424,7 @@ function wireDynamicHandlers(root) {
       state.bodyMetrics.push({ id: uid(), date, height, weight, measurements });
       persist(["bodyMetrics"]);
       bodyMetricDraftRows = [];
+      bodyMetricDraft = { date: "", height: "", weight: "" };
       render();
     });
     if (action === "delete-body-metric") el.addEventListener("click", () => {
