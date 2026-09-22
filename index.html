@@ -1125,6 +1125,7 @@ function renderExerciseResults(query, groupFilter) {
       <div class="btn accent small">Add</div>
     </div>
   `).join("") || `<div class="empty">No matches.</div>`;
+  wireDynamicHandlers(document.getElementById("modalOverlay"));
 }
 
 function addExerciseToWorkout(exId, supersetWithId) {
@@ -1312,6 +1313,7 @@ function openDraftExercisePicker() {
         <div><div>${escapeHtml(e.name)}</div><div class="muted">${e.groups.join(", ")}</div></div>
         <div class="btn accent small">Add</div>
       </div>`).join("") || `<div class="empty">No matches.</div>`;
+    wireDynamicHandlers(document.getElementById("modalOverlay"));
   };
   renderDraftResults("", null);
   let gf = null;
@@ -1894,6 +1896,7 @@ function openAddMaxModal() {
         <div><div>${escapeHtml(e.name)}</div><div class="muted">${e.groups.join(", ")}</div></div>
         <div class="btn accent small">Select</div>
       </div>`).join("") || `<div class="empty">No matches.</div>`;
+    wireDynamicHandlers(document.getElementById("modalOverlay"));
   };
   renderResults("", null);
   let gf = null;
