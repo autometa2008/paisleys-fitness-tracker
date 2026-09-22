@@ -764,6 +764,88 @@ function loadPhotos() {
   });
 }
 
+/* ---------------- Backup / restore (no account needed) ----------------
+   Everything lives in localStorage + IndexedDB on this device only.
+   Export bundles it all (minus the API key) into one JSON file the user
+   can AirDrop/save, then import merges it back in on any device. */
+async function exportBackup() {
+  const photos = await dbGetAllPhotos();
+  const photosData = await Promise.all(photos.map(p => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ id: p.id, date: p.date, dataUrl: reader.result });
+    reader.onerror = reject;
+    reader.readAsDataURL(p.blob);
+  })));
+
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    customExercises: state.customExercises,
+    routines: state.routines,
+    workouts: state.workouts,
+    bodyMetrics: state.bodyMetrics,
+    suggestions: state.suggestions,
+    photos: photosData,
+  };
+  const json = JSON.stringify(backup, null, 2);
+  const filename = `fitness-tracker-backup-${todayISODate()}.json`;
+  const file = new File([json], filename, { type: "application/json" });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "Fitness Tracker Backup" });
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importBackup(file) {
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch (e) {
+    alert("That doesn't look like a valid backup file.");
+    return;
+  }
+  if (!backup || typeof backup !== "object") {
+    alert("That doesn't look like a valid backup file.");
+    return;
+  }
+  if (!confirm("Restore this backup? It will be merged into what's already on this device — nothing existing gets deleted.")) return;
+
+  const mergeById = (existing, incoming) => {
+    const ids = new Set(existing.map(x => x.id));
+    (incoming || []).forEach(x => { if (!ids.has(x.id)) existing.push(x); });
+  };
+  mergeById(state.customExercises, backup.customExercises);
+  mergeById(state.routines, backup.routines);
+  mergeById(state.workouts, backup.workouts);
+  mergeById(state.bodyMetrics, backup.bodyMetrics);
+  state.workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+  persist(["customExercises", "routines", "workouts", "bodyMetrics"]);
+
+  if (backup.photos && backup.photos.length) {
+    const existingIds = new Set(state.photosCache.map(p => p.id));
+    for (const p of backup.photos) {
+      if (existingIds.has(p.id)) continue;
+      const blob = await (await fetch(p.dataUrl)).blob();
+      await dbAddPhoto({ id: p.id, date: p.date, blob });
+    }
+    await loadPhotos();
+  }
+  alert("Backup restored.");
+  render();
+}
+
 /* ================= RENDER ROOT ================= */
 const MENU_TABS = ["routines", "history", "suggestions", "settings"];
 
@@ -1593,6 +1675,13 @@ function renderSettings() {
       <p class="muted">Paisley's Fitness Tracker stores everything locally on this device — your workouts, routines, body metrics, and photos never leave your phone, except when you use Calorie Chat or Suggestions, which send the relevant data (a food photo/description, or a summary of your training) to Claude to get a response.</p>
     </div>
     <div class="card">
+      <h3>Backup &amp; Restore</h3>
+      <p class="muted">Your data only lives on this phone. Export a backup file every so often (or right before switching phones), and restore it on a new device to bring everything back — workouts, routines, body metrics, and photos. Your API key is left out of backups for safety; re-add it above after restoring.</p>
+      <button class="btn accent block" style="margin-bottom:10px;" data-action="export-backup">Export Backup</button>
+      <input type="file" accept="application/json" id="restoreInput" style="display:none;">
+      <button class="btn ghost block" data-action="restore-backup">Restore from Backup</button>
+    </div>
+    <div class="card">
       <h3>Danger Zone</h3>
       <button class="btn danger block" data-action="clear-all-data">Erase All Data</button>
     </div>
@@ -1807,6 +1896,8 @@ function wireDynamicHandlers(root) {
         location.reload();
       }
     });
+    if (action === "export-backup") el.addEventListener("click", () => exportBackup());
+    if (action === "restore-backup") el.addEventListener("click", () => document.getElementById("restoreInput").click());
   });
 
   const histSelect = root.querySelector("#historyExerciseSelect");
@@ -1826,6 +1917,15 @@ function wireDynamicHandlers(root) {
         .then(loadPhotos)
         .then(render)
         .catch(err => alert("Couldn't save photo: " + err.message));
+    });
+  }
+
+  const restoreInput = root.querySelector("#restoreInput");
+  if (restoreInput && !restoreInput.dataset.wired) {
+    restoreInput.dataset.wired = "1";
+    restoreInput.addEventListener("change", () => {
+      const file = restoreInput.files[0];
+      if (file) importBackup(file);
     });
   }
 }
