@@ -34,7 +34,7 @@
     font-size: 18px;
   }
   body {
-    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--tabbar-h, 110px) + 24px);
     padding-top: env(safe-area-inset-top);
   }
   h1,h2,h3,h4 { margin: 0 0 10px 0; font-weight: 700; }
@@ -2124,7 +2124,22 @@ function wireDynamicHandlers(root) {
   }
 }
 
+/* Reserve exactly as much bottom space as the tab bar actually takes up on
+   this device/font-size, instead of guessing a fixed pixel number — fixes
+   content getting hidden behind the bar on devices where it renders taller
+   than expected. */
+function syncTabBarHeight() {
+  const tabs = document.querySelector(".tabs");
+  if (!tabs) return;
+  const h = tabs.getBoundingClientRect().height;
+  if (h > 0) document.documentElement.style.setProperty("--tabbar-h", h + "px");
+}
+window.addEventListener("resize", syncTabBarHeight);
+window.addEventListener("orientationchange", () => setTimeout(syncTabBarHeight, 100));
+
 render();
+syncTabBarHeight();
+setTimeout(syncTabBarHeight, 300);
 loadPhotos().then(() => { if (state.tab === "history") render(); }).catch(() => {});
 </script>
 </body>
