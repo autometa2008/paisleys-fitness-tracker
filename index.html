@@ -875,6 +875,11 @@ async function exportBackup() {
     workouts: state.workouts,
     bodyMetrics: state.bodyMetrics,
     suggestions: state.suggestions,
+    calorieLog: state.calorieLog,
+    nutritionGoals: state.nutritionGoals,
+    manualMaxes: state.manualMaxes,
+    trainingProfile: state.trainingProfile,
+    muscleTiers: state.muscleTiers,
     photos: photosData,
   };
   const json = JSON.stringify(backup, null, 2);
@@ -906,33 +911,93 @@ async function importBackup(file) {
     alert("That doesn't look like a valid backup file.");
     return;
   }
-  if (!backup || typeof backup !== "object") {
-    alert("That doesn't look like a valid backup file.");
+  const looksLikeBackup = backup && typeof backup === "object" &&
+    ["workouts", "routines", "customExercises", "bodyMetrics"].some(k => Array.isArray(backup[k]));
+  if (!looksLikeBackup) {
+    alert("That doesn't look like a Fitness Tracker backup file.");
     return;
   }
-  if (!confirm("Restore this backup? It will be merged into what's already on this device — nothing existing gets deleted.")) return;
+  const n = k => (Array.isArray(backup[k]) ? backup[k].length : 0);
+  const when = backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : "unknown date";
+  const summary = `This backup (from ${when}) contains ${n("workouts")} workouts, ${n("routines")} routines, ` +
+    `${n("customExercises")} custom exercises, ${n("bodyMetrics")} body entries, and ${n("photos")} photos.`;
+  if (!confirm(summary + "\n\nRestore it? It will be merged into what's already on this device — nothing existing gets deleted.")) return;
 
-  const mergeById = (existing, incoming) => {
-    const ids = new Set(existing.map(x => x.id));
-    (incoming || []).forEach(x => { if (!ids.has(x.id)) existing.push(x); });
-  };
-  mergeById(state.customExercises, backup.customExercises);
-  mergeById(state.routines, backup.routines);
-  mergeById(state.workouts, backup.workouts);
-  mergeById(state.bodyMetrics, backup.bodyMetrics);
-  state.workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
-  persist(["customExercises", "routines", "workouts", "bodyMetrics"]);
+  try {
+    const mergeById = (existing, incoming) => {
+      const ids = new Set(existing.map(x => x.id));
+      let added = 0;
+      (Array.isArray(incoming) ? incoming : []).forEach(x => {
+        if (x && !ids.has(x.id)) { existing.push(x); ids.add(x.id); added++; }
+      });
+      return added;
+    };
+    const added = {
+      workouts: mergeById(state.workouts, backup.workouts),
+      routines: 0,
+      exercises: mergeById(state.customExercises, backup.customExercises),
+      bodyMetrics: mergeById(state.bodyMetrics, backup.bodyMetrics),
+      maxes: mergeById(state.manualMaxes, backup.manualMaxes),
+      photos: 0,
+    };
+    state.workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  if (backup.photos && backup.photos.length) {
-    const existingIds = new Set(state.photosCache.map(p => p.id));
-    for (const p of backup.photos) {
-      if (existingIds.has(p.id)) continue;
-      const blob = await (await fetch(p.dataUrl)).blob();
-      await dbAddPhoto({ id: p.id, date: p.date, blob });
+    // A fresh device auto-seeds the default routines with new random ids, so a
+    // backed-up copy of a default routine would otherwise land as a duplicate.
+    // Swap out any untouched seeded default for the backup's version instead.
+    const untouchedDefault = r => DEFAULT_ROUTINES.some(dr =>
+      dr.name === r.name && JSON.stringify(dr.exercises) === JSON.stringify(r.exercises));
+    (Array.isArray(backup.routines) ? backup.routines : []).forEach(br => {
+      if (!br || state.routines.some(r => r.id === br.id)) return;
+      const i = state.routines.findIndex(r => r.name === br.name && untouchedDefault(r));
+      if (i >= 0) state.routines[i] = br;
+      else state.routines.push(br);
+      added.routines++;
+    });
+
+    // Single-value data: mostly only fill in what this device doesn't have yet
+    // (nutrition goals are the exception — the backup's goals win).
+    if (backup.suggestions && typeof backup.suggestions === "object") {
+      if (!state.suggestions.general && backup.suggestions.general) state.suggestions.general = backup.suggestions.general;
+      state.suggestions.byRoutine = { ...(backup.suggestions.byRoutine || {}), ...state.suggestions.byRoutine };
     }
-    await loadPhotos();
+    if (backup.calorieLog && Array.isArray(backup.calorieLog.history)) {
+      const days = new Set(state.calorieLog.history.map(d => d.date));
+      backup.calorieLog.history.forEach(d => { if (d && !days.has(d.date)) state.calorieLog.history.push(d); });
+      state.calorieLog.history.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0));
+    }
+    if (backup.nutritionGoals && typeof backup.nutritionGoals === "object") state.nutritionGoals = { ...state.nutritionGoals, ...backup.nutritionGoals };
+    if (!state.trainingProfile && backup.trainingProfile) state.trainingProfile = backup.trainingProfile;
+    if (!state.muscleTiers.generatedAt && backup.muscleTiers && backup.muscleTiers.generatedAt) state.muscleTiers = backup.muscleTiers;
+
+    persist(["customExercises", "routines", "workouts", "bodyMetrics", "manualMaxes", "suggestions",
+             "calorieLog", "nutritionGoals", "trainingProfile", "muscleTiers"]);
+
+    let photoFailures = 0;
+    if (Array.isArray(backup.photos) && backup.photos.length) {
+      const existingIds = new Set(state.photosCache.map(p => p.id));
+      for (const p of backup.photos) {
+        if (!p || existingIds.has(p.id)) continue;
+        try {
+          const blob = await (await fetch(p.dataUrl)).blob();
+          await dbAddPhoto({ id: p.id, date: p.date, blob });
+          added.photos++;
+        } catch (e) {
+          photoFailures++;
+        }
+      }
+      await loadPhotos();
+    }
+
+    const total = Object.values(added).reduce((a, b) => a + b, 0);
+    let msg = total === 0
+      ? "Backup read OK, but everything in it is already on this device — nothing new to add."
+      : `Backup restored: ${added.workouts} workouts, ${added.routines} routines, ${added.exercises} custom exercises, ${added.bodyMetrics} body entries, ${added.maxes} maxes, ${added.photos} photos added.`;
+    if (photoFailures) msg += `\n\n${photoFailures} photo(s) couldn't be restored.`;
+    alert(msg);
+  } catch (e) {
+    alert("Restore failed: " + (e && e.message ? e.message : e));
   }
-  alert("Backup restored.");
   render();
 }
 
@@ -2472,7 +2537,7 @@ function renderSettings() {
       <h3>Backup &amp; Restore</h3>
       <p class="muted">Your data only lives on this phone. Export a backup file every so often (or right before switching phones), and restore it on a new device to bring everything back — workouts, routines, body metrics, and photos. Your API key is left out of backups for safety; re-add it above after restoring.</p>
       <button class="btn accent block" style="margin-bottom:10px;" data-action="export-backup">Export Backup</button>
-      <input type="file" accept="application/json" id="restoreInput" style="display:none;">
+      <input type="file" id="restoreInput" style="display:none;">
       <button class="btn ghost block" data-action="restore-backup">Restore from Backup</button>
     </div>
     <div class="card">
@@ -2873,6 +2938,7 @@ function wireDynamicHandlers(root) {
     restoreInput.dataset.wired = "1";
     restoreInput.addEventListener("change", () => {
       const file = restoreInput.files[0];
+      restoreInput.value = ""; // allow picking the same file again
       if (file) importBackup(file);
     });
   }
