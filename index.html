@@ -162,6 +162,14 @@
 
   .set-row { display:flex; gap:7px; align-items:center; margin-bottom:8px; }
   .set-row .idx { width: 26px; color: var(--text-dim); font-size:15px; text-align:center; }
+  .set-check {
+    width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; padding: 0;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .set-check.done { background: var(--good); border-color: var(--good); color: #06261a; }
   .drop-row { margin-left: 32px; margin-bottom:8px; }
   .drop-tag { color: var(--danger); font-size: 13px; font-weight:700; margin-right:6px; }
 
@@ -1040,7 +1048,7 @@ function renderExerciseEntry(entry) {
 
   const setsHtml = entry.sets.map((s, i) => `
     <div class="set-row">
-      <div class="idx">${i+1}</div>
+      <button class="set-check${s.done ? " done" : ""}" data-action="toggle-set-done" data-id="${entry.id}" data-set="${i}" title="Mark set done">${s.done ? "✓" : i+1}</button>
       <input class="num" type="number" placeholder="lb" value="${s.weight ?? ""}" title="Negative = assisted (e.g. -20 for assisted pull-ups)"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="weight">
       <span class="muted">×</span>
@@ -1212,6 +1220,17 @@ function saveCustomExercise() {
 
 function saveActiveWorkout() { persist(["activeWorkout"]); }
 
+// Lets the shared set/exercise-editing handlers work identically on the live
+// workout AND on a past (finished) workout opened for editing in History.
+let editingPastWorkoutId = null;
+function getEditingWorkout() {
+  return editingPastWorkoutId ? state.workouts.find(w => w.id === editingPastWorkoutId) : state.activeWorkout;
+}
+function saveEditingWorkout() {
+  if (editingPastWorkoutId) persist(["workouts"]);
+  else saveActiveWorkout();
+}
+
 function startWorkout(routine) {
   state.activeWorkout = {
     id: uid(),
@@ -1226,7 +1245,10 @@ function startWorkout(routine) {
       }
       const ex = exerciseById(re.exerciseId);
       if (!ex) return null;
-      return { id: uid(), kind:"strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets:[{weight:"",reps:""}], supersetGroup: re.supersetGroup || null };
+      const sets = (re.defaultSets && re.defaultSets.length)
+        ? re.defaultSets.map(s => ({ weight: s.weight || "", reps: s.reps || "", drops: (s.drops || []).map(d => ({ weight: d.weight || "", reps: d.reps || "" })) }))
+        : [{ weight:"", reps:"" }];
+      return { id: uid(), kind:"strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets, supersetGroup: re.supersetGroup || null };
     }).filter(Boolean) : []
   };
   saveActiveWorkout();
@@ -1243,7 +1265,46 @@ function finishWorkout() {
   state.workouts.unshift(w);
   state.activeWorkout = null;
   persist(["workouts","activeWorkout"]);
+  maybeOfferSaveRoutineTemplate(w);
   render();
+}
+
+// Builds a routine.exercises[]-shaped list from a finished workout's actual
+// entries, so it can be compared against (or saved as) that routine's template.
+function buildRoutineExercisesFromWorkout(w) {
+  return w.entries.map(e => {
+    if (e.kind === "cardio") {
+      return { type: "cardio", name: e.name, supersetGroup: e.supersetGroup || null };
+    }
+    return {
+      type: "strength",
+      exerciseId: e.exerciseId,
+      targetSets: "", targetReps: "",
+      defaultSets: e.sets.map(s => ({
+        weight: s.weight || "", reps: s.reps || "",
+        drops: (s.drops || []).map(d => ({ weight: d.weight || "", reps: d.reps || "" })),
+      })),
+      supersetGroup: e.supersetGroup || null,
+    };
+  });
+}
+
+let pendingRoutineTemplateSave = null;
+function maybeOfferSaveRoutineTemplate(w) {
+  if (!w.routineId) return;
+  const routine = state.routines.find(r => r.id === w.routineId);
+  if (!routine) return;
+  const candidate = buildRoutineExercisesFromWorkout(w);
+  if (JSON.stringify(candidate) === JSON.stringify(routine.exercises)) return;
+  pendingRoutineTemplateSave = { routineId: routine.id, exercises: candidate };
+  showModal(`
+    <h2>Update "${escapeHtml(routine.name)}"?</h2>
+    <p class="muted">This workout's sets, weights, and reps are different from what's saved in this routine. Save it like this, so next time you start "${escapeHtml(routine.name)}" it's already pre-filled with these numbers?</p>
+    <div class="row">
+      <button class="btn ghost grow" data-action="skip-routine-template-save">No Thanks</button>
+      <button class="btn accent grow" data-action="save-routine-template">Save</button>
+    </div>
+  `);
 }
 
 /* ================= ROUTINES TAB ================= */
@@ -1294,7 +1355,7 @@ function renderRoutineBuilder() {
         <div class="list-item" style="${linked ? 'border-left:3px solid var(--accent); padding-left:8px;' : ''}">
           <div>
             <div>${re.type === "cardio" ? "🏃 " : ""}${escapeHtml(routineItemName(re))}</div>
-            <div class="muted">${linked ? "linked superset" : (re.type === "cardio" ? "cardio" : "target left blank - fill in as you go")}</div>
+            <div class="muted">${linked ? "linked superset" : re.type === "cardio" ? "cardio" : (re.defaultSets && re.defaultSets.length ? `${re.defaultSets.length} set${re.defaultSets.length!==1?"s":""} saved from last time` : "target left blank - fill in as you go")}</div>
           </div>
           <div class="row">
             ${i > 0 ? `<button class="btn ghost small" data-action="draft-toggle-superset" data-idx="${i}">${linked ? "🔗 Unlink" : "🔗 Link"}</button>` : ""}
@@ -1448,16 +1509,26 @@ function renderWorkoutHistory() {
   return state.workouts.map(w => {
     const vol = totalVolume(w);
     const expanded = expandedWorkoutId === w.id;
+    const editing = editingPastWorkoutId === w.id;
     return `
       <div class="card">
         <div class="list-item" data-action="toggle-workout" data-id="${w.id}">
           <div>
-            <div>${w.routineName || "Freestyle Workout"}</div>
+            <div>${w.routineName || "Freestyle Workout"}${editing ? " · Editing" : ""}</div>
             <div class="muted">${fmtDate(w.date)} · ${fmtElapsed(w.durationSec*1000)} · ${vol.toLocaleString()} lb volume</div>
           </div>
           <div class="muted">${expanded ? "▲" : "▼"}</div>
         </div>
-        ${expanded ? groupEntriesBySuperset(w.entries).map(g => renderReadonlyEntryGroup(g)).join("") : ""}
+        ${expanded ? (editing ? `
+          ${groupEntriesBySuperset(w.entries).map(g => renderEntryGroup(g)).join("")}
+          <div class="row" style="margin-top:4px;">
+            <button class="btn ghost grow small" data-action="delete-workout" data-id="${w.id}">Delete Workout</button>
+            <button class="btn accent grow small" data-action="stop-edit-workout">Done Editing</button>
+          </div>
+        ` : `
+          ${groupEntriesBySuperset(w.entries).map(g => renderReadonlyEntryGroup(g)).join("")}
+          <button class="btn ghost block small" style="margin-top:8px;" data-action="start-edit-workout" data-id="${w.id}">Edit</button>
+        `) : ""}
       </div>
     `;
   }).join("");
@@ -1648,6 +1719,20 @@ function buildTrainingSummary() {
     lines.push(`MOST RECENT BODY METRICS (${fmtDate(latestMetric.date)}): height ${latestMetric.height || "?"}, weight ${latestMetric.weight || "?"}`);
   }
 
+  const g = state.nutritionGoals;
+  lines.push("");
+  lines.push(`NUTRITION GOALS (daily): protein ${g.protein}g, carbs ${g.carbs}g, fat ${g.fat}g, fiber ${g.fiber}g.`);
+  const recentDays = state.calorieLog.history.slice(0, 7);
+  if (recentDays.length) {
+    lines.push("RECENT DAYS ACTUALLY EATEN (most recent first):");
+    recentDays.forEach(d => {
+      const t = d.totals || {};
+      lines.push(`- ${fmtDate(d.date)}: ${Math.round(t.calories||d.totalCalories||0)} cal, ${Math.round(t.protein||0)}g protein, ${Math.round(t.carbs||0)}g carbs, ${Math.round(t.fat||0)}g fat, ${Math.round(t.fiber||0)}g fiber`);
+    });
+  } else {
+    lines.push("No nutrition days logged yet.");
+  }
+
   return lines.join("\n");
 }
 
@@ -1716,7 +1801,9 @@ async function callClaudeAPI(systemPrompt, messages, opts) {
   return (data.content || []).map(b => b.text || "").join("");
 }
 
-const SUGGESTIONS_SYSTEM_PROMPT = `You are an experienced, encouraging strength coach reviewing a lifter's own logged training data from their personal tracker app. You only know what's in the data given to you — do not assume anything else about them. Give specific, concrete suggestions grounded in the numbers: call out muscle groups that look undertrained relative to the rest, flag exercises where the weight/reps have been flat for multiple sessions (possible plateau -> suggest a concrete progressive-overload tweak, like adding 5lb or one rep), and suggest at most 1-2 exercise additions or swaps per routine if something looks like a clear gap. Keep it tight: short bullet points, no fluff, no generic disclaimers about consulting a doctor. Plain text only, no markdown symbols.`;
+const SUGGESTIONS_SYSTEM_PROMPT = `You are an experienced, encouraging strength coach reviewing a lifter's own logged training data from their personal tracker app. You only know what's in the data given to you — do not assume anything else about them. Give specific, concrete suggestions grounded in the numbers: call out muscle groups that look undertrained relative to the rest, flag exercises where the weight/reps have been flat for multiple sessions (possible plateau -> suggest a concrete progressive-overload tweak, like adding 5lb or one rep), and suggest at most 1-2 exercise additions or swaps per routine if something looks like a clear gap. Keep it tight: short bullet points, no fluff, no generic disclaimers about consulting a doctor. Plain text only, no markdown symbols.
+
+You're also given their nutrition goals and recent days actually eaten. Use it when it's genuinely relevant to the training question at hand — e.g. protein running under goal relative to how much they're lifting, or a pattern where intake looks mismatched with their hardest training days. Don't force a nutrition comment into every response — only mention it when the numbers actually show something worth flagging.`;
 
 let suggestionsLoading = null; // "general" or routineId, or null
 
@@ -2349,36 +2436,43 @@ function wireDynamicHandlers(root) {
     if (action === "save-cardio") el.addEventListener("click", () => saveCardioEntry());
     if (action === "make-superset") el.addEventListener("click", () => openAddExerciseModal(el.dataset.id));
     if (action === "remove-entry") el.addEventListener("click", () => {
-      state.activeWorkout.entries = state.activeWorkout.entries.filter(e => e.id !== el.dataset.id);
-      saveActiveWorkout(); render();
+      const w = getEditingWorkout();
+      w.entries = w.entries.filter(e => e.id !== el.dataset.id);
+      saveEditingWorkout(); render();
     });
     if (action === "add-set") el.addEventListener("click", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       const topWeight = entry.sets[0] ? entry.sets[0].weight : "";
       entry.sets.push({ weight: topWeight || "", reps:"" });
-      saveActiveWorkout(); render();
+      saveEditingWorkout(); render();
     });
     if (action === "remove-set") el.addEventListener("click", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       entry.sets.splice(Number(el.dataset.set), 1);
       if (entry.sets.length === 0) entry.sets.push({weight:"",reps:""});
-      saveActiveWorkout(); render();
+      saveEditingWorkout(); render();
     });
     if (action === "add-drop") el.addEventListener("click", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       const set = entry.sets[Number(el.dataset.set)];
       set.drops = set.drops || [];
       set.drops.push({ weight:"", reps:"" });
-      saveActiveWorkout(); render();
+      saveEditingWorkout(); render();
     });
     if (action === "remove-drop") el.addEventListener("click", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       const set = entry.sets[Number(el.dataset.set)];
       set.drops.splice(Number(el.dataset.drop), 1);
-      saveActiveWorkout(); render();
+      saveEditingWorkout(); render();
+    });
+    if (action === "toggle-set-done") el.addEventListener("click", () => {
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
+      const set = entry.sets[Number(el.dataset.set)];
+      set.done = !set.done;
+      saveEditingWorkout(); render();
     });
     if (action === "set-field") el.addEventListener("input", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       const idx = Number(el.dataset.set);
       const field = el.dataset.field;
       entry.sets[idx][field] = el.value;
@@ -2398,12 +2492,12 @@ function wireDynamicHandlers(root) {
           entry.sets[idx].weightManual = true;
         }
       }
-      saveActiveWorkout();
+      saveEditingWorkout();
     });
     if (action === "drop-field") el.addEventListener("input", () => {
-      const entry = state.activeWorkout.entries.find(e => e.id === el.dataset.id);
+      const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       entry.sets[Number(el.dataset.set)].drops[Number(el.dataset.drop)][el.dataset.field] = el.value;
-      saveActiveWorkout();
+      saveEditingWorkout();
     });
 
     // Routines
@@ -2418,6 +2512,19 @@ function wireDynamicHandlers(root) {
         state.routines = state.routines.filter(r => r.id !== el.dataset.id);
         persist(["routines"]); render();
       }
+    });
+    if (action === "save-routine-template") el.addEventListener("click", () => {
+      const routine = state.routines.find(r => r.id === pendingRoutineTemplateSave.routineId);
+      if (routine) {
+        routine.exercises = pendingRoutineTemplateSave.exercises;
+        persist(["routines"]);
+      }
+      pendingRoutineTemplateSave = null;
+      closeModal(); render();
+    });
+    if (action === "skip-routine-template-save") el.addEventListener("click", () => {
+      pendingRoutineTemplateSave = null;
+      closeModal();
     });
     if (action === "draft-add-exercise") el.addEventListener("click", () => openDraftExercisePicker());
     if (action === "draft-add-cardio") el.addEventListener("click", () => openDraftCardioModal());
@@ -2473,6 +2580,24 @@ function wireDynamicHandlers(root) {
     if (action === "toggle-workout") el.addEventListener("click", () => {
       expandedWorkoutId = expandedWorkoutId === el.dataset.id ? null : el.dataset.id;
       render();
+    });
+    if (action === "start-edit-workout") el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      editingPastWorkoutId = el.dataset.id;
+      render();
+    });
+    if (action === "stop-edit-workout") el.addEventListener("click", () => {
+      editingPastWorkoutId = null;
+      render();
+    });
+    if (action === "delete-workout") el.addEventListener("click", () => {
+      if (confirm("Delete this workout entirely? This can't be undone.")) {
+        state.workouts = state.workouts.filter(w => w.id !== el.dataset.id);
+        if (editingPastWorkoutId === el.dataset.id) editingPastWorkoutId = null;
+        if (expandedWorkoutId === el.dataset.id) expandedWorkoutId = null;
+        persist(["workouts"]);
+        render();
+      }
     });
 
     // Body composition
