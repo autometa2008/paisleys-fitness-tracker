@@ -128,7 +128,7 @@
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
   label { font-size: 14px; color: var(--text-dim); display:block; margin-bottom: 5px; }
   .field { margin-bottom: 12px; }
-  .num { width: 86px; text-align: center; }
+  .num { width: 76px; padding-left: 6px; padding-right: 6px; text-align: center; }
 
   .tabs {
     flex: 0 0 auto;
@@ -162,7 +162,7 @@
 
   .set-row { display:flex; gap:7px; align-items:center; margin-bottom:8px; }
   .set-row .idx { width: 26px; color: var(--text-dim); font-size:15px; text-align:center; }
-  .set-check {
+  .set-check, .set-remove {
     width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; padding: 0;
     border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
     font-size: 14px; font-weight: 700; cursor: pointer;
@@ -170,8 +170,13 @@
     -webkit-tap-highlight-color: transparent;
   }
   .set-check.done { background: var(--good); border-color: var(--good); color: #06261a; }
-  .drop-row { margin-left: 32px; margin-bottom:8px; }
-  .drop-tag { color: var(--danger); font-size: 13px; font-weight:700; margin-right:6px; }
+  .set-remove:active { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .drop-add-link {
+    display: inline-block; margin: -2px 0 10px 35px; font-size: 13px;
+    color: var(--text-dim); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .drop-row { margin-left: 24px; margin-bottom:8px; }
+  .drop-tag { color: var(--danger); font-size: 12px; font-weight:700; margin-right:4px; flex-shrink:0; }
 
   .superset-wrap { border-left: 3px solid var(--accent); padding-left: 12px; margin-bottom: 14px; }
   .superset-label { color: var(--accent); font-size: 13px; font-weight:700; text-transform:uppercase; margin-bottom:7px; }
@@ -985,16 +990,12 @@ function renderTrain() {
 
   return `
     <div class="card">
-      <div class="row between">
-        <div>
-          <div class="muted">${w.routineName || "Freestyle Workout"}${paused ? " · Paused" : ""}</div>
-          <div class="timer" id="liveTimer" style="${paused ? "opacity:.55;" : ""}">${fmtElapsed(workoutElapsedMs(w))}</div>
-        </div>
-        <div class="row wrap" style="justify-content:flex-end;">
-          <button class="btn ghost small" data-action="cancel-workout" title="Discard without saving">Cancel</button>
-          <button class="btn ${paused ? "accent" : "ghost"} small" data-action="toggle-pause-workout">${paused ? "Resume" : "Pause"}</button>
-          <button class="btn danger" data-action="finish-workout">Finish</button>
-        </div>
+      <h2 style="margin-bottom:2px;">${escapeHtml(w.routineName || "Freestyle Workout")}${paused ? " · Paused" : ""}</h2>
+      <div class="timer" id="liveTimer" style="${paused ? "opacity:.55;" : ""}">${fmtElapsed(workoutElapsedMs(w))}</div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn ghost grow small" data-action="cancel-workout" title="Discard without saving">Cancel</button>
+        <button class="btn ${paused ? "accent" : "ghost"} grow small" data-action="toggle-pause-workout">${paused ? "Resume" : "Pause"}</button>
+        <button class="btn danger grow small" data-action="finish-workout">Finish</button>
       </div>
     </div>
 
@@ -1054,9 +1055,9 @@ function renderExerciseEntry(entry) {
       <span class="muted">×</span>
       <input class="num" type="number" inputmode="decimal" placeholder="reps" value="${s.reps ?? ""}" title="Decimals allowed, e.g. 8.5"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="reps">
-      <button class="btn ghost small" data-action="add-drop" data-id="${entry.id}" data-set="${i}" title="Add drop set">+drop</button>
-      <button class="btn ghost small" data-action="remove-set" data-id="${entry.id}" data-set="${i}">✕</button>
+      <button class="set-remove" data-action="remove-set" data-id="${entry.id}" data-set="${i}" title="Remove set">✕</button>
     </div>
+    <span class="drop-add-link" data-action="add-drop" data-id="${entry.id}" data-set="${i}">+ add drop set</span>
     ${(s.drops||[]).map((d,di) => `
       <div class="set-row drop-row">
         <span class="drop-tag">DROP</span>
@@ -1065,7 +1066,7 @@ function renderExerciseEntry(entry) {
         <span class="muted">×</span>
         <input class="num" type="number" inputmode="decimal" placeholder="reps" value="${d.reps ?? ""}"
           data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="reps">
-        <button class="btn ghost small" data-action="remove-drop" data-id="${entry.id}" data-set="${i}" data-drop="${di}">✕</button>
+        <button class="set-remove" data-action="remove-drop" data-id="${entry.id}" data-set="${i}" data-drop="${di}" title="Remove drop">✕</button>
       </div>
     `).join("")}
   `).join("");
