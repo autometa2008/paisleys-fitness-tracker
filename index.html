@@ -1588,13 +1588,7 @@ function renderBodySection() {
 
     <div class="card">
       <h2>Eating Days</h2>
-      ${state.calorieLog.history.length ? state.calorieLog.history.map((d, i) => `
-        <div class="list-item" data-action="toggle-calorie-day" data-idx="${i}">
-          <div>${fmtDate(d.date)}</div>
-          <div class="muted">${d.totalCalories.toLocaleString()} cal</div>
-        </div>
-        ${expandedCalorieDayIdx === i ? d.messages.map(renderChatMessage).join("") : ""}
-      `).join("") : `<div class="empty">No days logged yet — use the Calories tab and they'll show up here.</div>`}
+      ${state.calorieLog.history.length ? state.calorieLog.history.map((d, i) => renderCalorieDayRow(d, i)).join("") : `<div class="empty">No days logged yet — use the Calories tab and they'll show up here.</div>`}
     </div>
   `;
 }
@@ -1942,26 +1936,45 @@ function openMaxDetailsModal(exerciseId) {
 }
 
 /* ================= CALORIES TAB (AI chat) ================= */
-const CALORIE_SYSTEM_PROMPT = `You are a calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or a photo of a meal, one meal/snack at a time, possibly several times a day. For every message, you must call exactly one of your two tools:
+const CALORIE_SYSTEM_PROMPT = `You are a careful calorie and macro tracking assistant inside a personal fitness app. The user sends a short description of food and/or one or more photos of a meal, one meal/snack at a time, possibly several times a day. For every message, you must call exactly one of your two tools:
 
 - log_meal: use this when the user is describing a NEW, separate meal or snack you haven't logged yet.
-- edit_last_meal: use this INSTEAD when the user is correcting, clarifying, or changing something about the meal you JUST logged in your previous turn — not adding a new item. Clear signs of this: "actually it was...", "make that...", "I meant...", "no wait...", "that should be...", or any correction to a detail (portion size, an ingredient, a swap) of what you just logged. In that case, re-estimate the FULL corrected totals for that same meal from scratch (don't add a delta on top of the old numbers) — the corrected numbers fully replace the old ones.
+- edit_last_meal: use this INSTEAD when the user is correcting, clarifying, or changing something about the meal you JUST logged in your previous turn — not adding a new item. Clear signs of this: "actually it was...", "make that...", "I meant...", "no wait...", "that should be...", or any correction to a detail (portion size, an ingredient, a swap) of what you just logged. In that case, re-estimate the FULL corrected item breakdown for that same meal from scratch (don't add a delta on top of the old numbers) — the corrected numbers fully replace the old ones.
 
-Always give your best real numeric estimate for all five fields (calories, protein, carbs, fat, fiber) even from a vague description (e.g. "I had a sandwich" still gets a real guess for all five, using a typical/average version of that food) — never leave one blank and never refuse.
+MULTIPLE PHOTOS: if more than one photo is attached to a single message, they are almost always different angles or parts of the SAME one meal (e.g. a wide shot and a close-up of the same plate, or one photo per dish in one sitting) — use all of them together to judge portion size and identify items more accurately, and log it as ONE meal, not several. Only treat them as separate items if they're clearly unrelated foods eaten at once (e.g. a plate photo plus a separate drink photo — still one meal, just log both as separate line items).
+
+ACCURACY, ESPECIALLY PROTEIN: do not eyeball the whole plate at once. First mentally identify each distinct food component and its portion size, then estimate each component's nutrition separately using standard nutrition-database values for that specific food (e.g. cooked chicken breast is about 31g protein per 100g, a large egg is about 6g protein, Greek yogurt is about 10g protein per 100g, white rice is about 2-3g protein per 100g cooked) — then the tool call's items are those components and the app sums them automatically. Protein is the macro users most often catch you underestimating, because it's tempting to guess low on meat/dairy/egg portions — deliberately double check each protein source's portion size before finalizing.
+
+Always give your best real numeric estimate even from a vague description (e.g. "I had a sandwich" still gets a real itemized guess, using a typical/average version of that food) — never leave a component out and never refuse.
 
 You have the conversation so far (today's earlier meals) and a summary of recent prior days below — use both as real memory. If the user references something they already told you ("same as yesterday", "same lunch as before", "like I had this morning"), look it up in that context and reuse those actual numbers rather than guessing fresh, and say in your summary what you matched it to.`;
+
+const MEAL_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    name: { type: "string", description: "The specific food component, e.g. 'grilled chicken breast' or 'white rice'." },
+    portion: { type: "string", description: "Estimated portion size, e.g. '6 oz' or '1 cup'." },
+    calories: { type: "integer" },
+    protein_g: { type: "number" },
+    carbs_g: { type: "number" },
+    fat_g: { type: "number" },
+    fiber_g: { type: "number" },
+  },
+  required: ["name", "portion", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
+};
 
 const MEAL_TOOL_SCHEMA = {
   type: "object",
   properties: {
     summary: { type: "string", description: "One short, friendly sentence: what this meal is and, if relevant, how you estimated it (e.g. matched to a prior day, or what you corrected)." },
-    calories: { type: "integer", description: "Estimated total calories for this meal." },
-    protein_g: { type: "number", description: "Estimated grams of protein for this meal." },
-    carbs_g: { type: "number", description: "Estimated grams of carbohydrates for this meal." },
-    fat_g: { type: "number", description: "Estimated grams of fat for this meal." },
-    fiber_g: { type: "number", description: "Estimated grams of fiber for this meal." },
+    items: {
+      type: "array",
+      description: "Break the meal into its distinct food components and estimate each one's nutrition separately (see instructions) — do not skip this and jump to a single holistic guess. Totals are computed automatically from these.",
+      items: MEAL_ITEM_SCHEMA,
+      minItems: 1,
+    },
   },
-  required: ["summary", "calories", "protein_g", "carbs_g", "fat_g", "fiber_g"],
+  required: ["summary", "items"],
 };
 
 const LOG_MEAL_TOOL = {
@@ -1985,14 +1998,32 @@ function buildRecentEatingContext() {
   return `\n\nRECENT DAYS (most recent first, for "same as yesterday"-type references):\n${days.join("\n")}`;
 }
 
+// Messages may carry a single legacy `imageDataUrl` (old data) or the newer
+// `imageDataUrls` array (multi-photo) — this normalizes either into a list.
+function messageImageUrls(m) {
+  if (m.imageDataUrls && m.imageDataUrls.length) return m.imageDataUrls;
+  if (m.imageDataUrl) return [m.imageDataUrl];
+  return [];
+}
+
+function sumMealItems(items) {
+  return (items || []).reduce((tot, it) => {
+    tot.calories += Number(it.calories) || 0;
+    tot.protein += Number(it.protein_g) || 0;
+    tot.carbs += Number(it.carbs_g) || 0;
+    tot.fat += Number(it.fat_g) || 0;
+    tot.fiber += Number(it.fiber_g) || 0;
+    return tot;
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
+}
+
 function calorieMessagesForAPI() {
   return state.calorieLog.messages.map(m => {
     if (m.role === "user") {
-      const blocks = [];
-      if (m.imageDataUrl) {
-        const parts = m.imageDataUrl.match(/^data:([^;]+);base64,(.*)$/);
-        if (parts) blocks.push({ type: "image", source: { type: "base64", media_type: parts[1], data: parts[2] } });
-      }
+      const blocks = messageImageUrls(m).map(url => {
+        const parts = url.match(/^data:([^;]+);base64,(.*)$/);
+        return parts ? { type: "image", source: { type: "base64", media_type: parts[1], data: parts[2] } } : null;
+      }).filter(Boolean);
       blocks.push({ type: "text", text: m.text });
       return { role: "user", content: blocks };
     }
@@ -2000,7 +2031,7 @@ function calorieMessagesForAPI() {
   });
 }
 
-let calorieDraftImage = null;
+let calorieDraftImages = [];
 let calorieSending = false;
 let expandedCalorieDayIdx = null;
 
@@ -2030,8 +2061,17 @@ function renderChatMessage(m, editable) {
     <div class="row" style="justify-content:${isUser ? "flex-end" : "flex-start"}; margin-bottom:12px; gap:6px;">
       ${editable && !isUser ? `<button class="btn ghost small" style="align-self:flex-start;" data-action="delete-calorie-message" data-id="${m.id}" title="Remove this entry">✕</button>` : ""}
       <div style="max-width:82%; background:${isUser ? "var(--blue)" : "var(--panel-2)"}; border:1px solid ${isUser ? "transparent" : "var(--border)"}; border-radius:14px; padding:10px 14px;">
-        ${m.imageDataUrl ? `<img src="${m.imageDataUrl}" style="width:100%;border-radius:8px;margin-bottom:6px;display:block;">` : ""}
+        ${messageImageUrls(m).length ? `
+          <div style="display:grid; grid-template-columns:${messageImageUrls(m).length > 1 ? "1fr 1fr" : "1fr"}; gap:4px; margin-bottom:6px;">
+            ${messageImageUrls(m).map(url => `<img src="${url}" style="width:100%;border-radius:8px;display:block;aspect-ratio:1;object-fit:cover;">`).join("")}
+          </div>
+        ` : ""}
         <div style="white-space:pre-wrap;">${escapeHtml(m.text)}</div>
+        ${m.items && m.items.length > 1 ? `
+          <div class="muted" style="margin-top:6px; font-size:13px; line-height:1.5;">
+            ${m.items.map(it => `${escapeHtml(it.name)} (${escapeHtml(it.portion || "")}): ${Math.round(it.calories)} cal, ${it.protein_g}g protein`).join("<br>")}
+          </div>
+        ` : ""}
         ${macroBits ? `<div class="muted" style="margin-top:6px;">${macroBits}</div>` : ""}
       </div>
     </div>
@@ -2060,19 +2100,24 @@ function renderMacroTile(label, value, goal) {
   `;
 }
 
+function renderCalorieDayRow(d, i) {
+  return `
+    <div class="list-item" data-action="toggle-calorie-day" data-idx="${i}">
+      <div>${fmtDate(d.date)}</div>
+      <div class="row">
+        <span class="muted">${d.totalCalories.toLocaleString()} cal</span>
+        <button class="btn ghost small" data-action="delete-calorie-day" data-idx="${i}" title="Delete this day">✕</button>
+      </div>
+    </div>
+    ${expandedCalorieDayIdx === i ? d.messages.map(m => renderChatMessage(m, false)).join("") : ""}
+  `;
+}
+
 function renderPastCalorieDays() {
   if (!state.calorieLog.history.length) return "";
   return `
     <h3 style="margin:18px 0 8px 4px;">Past Days</h3>
-    ${state.calorieLog.history.map((d, i) => `
-      <div class="card">
-        <div class="list-item" data-action="toggle-calorie-day" data-idx="${i}">
-          <div>${fmtDate(d.date)}</div>
-          <div class="muted">${d.totalCalories.toLocaleString()} cal</div>
-        </div>
-        ${expandedCalorieDayIdx === i ? d.messages.map(renderChatMessage).join("") : ""}
-      </div>
-    `).join("")}
+    ${state.calorieLog.history.map((d, i) => `<div class="card">${renderCalorieDayRow(d, i)}</div>`).join("")}
   `;
 }
 
@@ -2123,15 +2168,20 @@ function renderCalories() {
     </div>
 
     <div class="card">
-      ${calorieDraftImage ? `
-        <div style="position:relative; display:inline-block; margin-bottom:10px;">
-          <img src="${calorieDraftImage}" style="max-width:130px; border-radius:10px; display:block;">
-          <button class="btn danger small" style="position:absolute; top:-10px; right:-10px; border-radius:50%; width:30px; height:30px; padding:0;" data-action="remove-calorie-photo">✕</button>
+      ${calorieDraftImages.length ? `
+        <div class="row wrap" style="margin-bottom:10px;">
+          ${calorieDraftImages.map((img, i) => `
+            <div style="position:relative; display:inline-block;">
+              <img src="${img}" style="width:90px; height:90px; object-fit:cover; border-radius:10px; display:block;">
+              <button class="btn danger small" style="position:absolute; top:-10px; right:-10px; border-radius:50%; width:30px; height:30px; padding:0;" data-action="remove-calorie-photo" data-idx="${i}">✕</button>
+            </div>
+          `).join("")}
         </div>
+        <p class="muted" style="margin-top:-4px;">${calorieDraftImages.length > 1 ? "Sent together as one meal — different angles help judge portions." : ""}</p>
       ` : ""}
-      <input type="file" accept="image/*" id="calorieChatPhotoInput" style="display:none;">
+      <input type="file" accept="image/*" id="calorieChatPhotoInput" multiple style="display:none;">
       <div class="row">
-        <button class="btn ghost" data-action="add-calorie-photo" title="Add photo">📷</button>
+        <button class="btn ghost" data-action="add-calorie-photo" title="Add photo(s)">📷</button>
         <input class="grow" id="calorieChatText" placeholder="What did you eat?" ${calorieSending ? "disabled" : ""}>
         <button class="btn accent" data-action="send-calorie-message" ${calorieSending ? "disabled" : ""}>${calorieSending ? "…" : "Send"}</button>
       </div>
@@ -2144,11 +2194,11 @@ function renderCalories() {
 async function sendCalorieMessage() {
   const textInput = document.getElementById("calorieChatText");
   const text = textInput ? textInput.value.trim() : "";
-  const image = calorieDraftImage;
-  if (!text && !image) return;
+  const images = calorieDraftImages;
+  if (!text && !images.length) return;
 
-  state.calorieLog.messages.push({ id: uid(), role: "user", text: text || "(photo)", imageDataUrl: image || null });
-  calorieDraftImage = null;
+  state.calorieLog.messages.push({ id: uid(), role: "user", text: text || "(photo)", imageDataUrls: images.slice() });
+  calorieDraftImages = [];
   calorieSending = true;
   persist(["calorieLog"]);
   render();
@@ -2159,14 +2209,16 @@ async function sendCalorieMessage() {
 
     const { toolName, input } = await callClaudeAPI(systemPrompt, messages, {
       model: "claude-opus-5",
-      maxTokens: 500,
+      maxTokens: 900,
       tools: [LOG_MEAL_TOOL, EDIT_MEAL_TOOL],
       toolChoice: { type: "any" },
     });
 
+    const totals = sumMealItems(input.items);
     const macroFields = {
       text: input.summary || (toolName === "edit_last_meal" ? "Updated." : "Logged."),
-      calories: input.calories, protein: input.protein_g, carbs: input.carbs_g, fat: input.fat_g, fiber: input.fiber_g,
+      calories: Math.round(totals.calories), protein: totals.protein, carbs: totals.carbs, fat: totals.fat, fiber: totals.fiber,
+      items: input.items || [],
     };
 
     if (toolName === "edit_last_meal") {
@@ -2522,12 +2574,24 @@ function wireDynamicHandlers(root) {
 
     // Calorie chat
     if (action === "add-calorie-photo") el.addEventListener("click", () => document.getElementById("calorieChatPhotoInput").click());
-    if (action === "remove-calorie-photo") el.addEventListener("click", () => { calorieDraftImage = null; render(); });
+    if (action === "remove-calorie-photo") el.addEventListener("click", () => {
+      calorieDraftImages.splice(Number(el.dataset.idx), 1);
+      render();
+    });
     if (action === "send-calorie-message") el.addEventListener("click", () => sendCalorieMessage());
     if (action === "toggle-calorie-day") el.addEventListener("click", () => {
       const idx = Number(el.dataset.idx);
       expandedCalorieDayIdx = expandedCalorieDayIdx === idx ? null : idx;
       render();
+    });
+    if (action === "delete-calorie-day") el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (confirm("Delete this entire day from your history? This can't be undone.")) {
+        state.calorieLog.history.splice(Number(el.dataset.idx), 1);
+        if (expandedCalorieDayIdx !== null) expandedCalorieDayIdx = null;
+        persist(["calorieLog"]);
+        render();
+      }
     });
     if (action === "delete-calorie-message") el.addEventListener("click", () => {
       if (confirm("Remove this logged entry?")) {
@@ -2578,12 +2642,11 @@ function wireDynamicHandlers(root) {
   if (calorieChatPhotoInput && !calorieChatPhotoInput.dataset.wired) {
     calorieChatPhotoInput.dataset.wired = "1";
     calorieChatPhotoInput.addEventListener("change", () => {
-      const file = calorieChatPhotoInput.files[0];
-      if (!file) return;
-      compressImage(file, 1024, 0.8)
-        .then(blobToDataURL)
-        .then(dataUrl => { calorieDraftImage = dataUrl; render(); })
-        .catch(err => alert("Couldn't attach photo: " + err.message));
+      const files = Array.from(calorieChatPhotoInput.files || []);
+      if (!files.length) return;
+      Promise.all(files.map(f => compressImage(f, 1024, 0.8).then(blobToDataURL)))
+        .then(dataUrls => { calorieDraftImages = calorieDraftImages.concat(dataUrls); render(); })
+        .catch(err => alert("Couldn't attach photo(s): " + err.message));
     });
   }
 
