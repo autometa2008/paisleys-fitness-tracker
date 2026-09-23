@@ -576,6 +576,27 @@ function muscleColor(t) {
   return `hsl(219, ${sat.toFixed(0)}%, ${light.toFixed(0)}%)`;
 }
 
+// Six discrete strength tiers (not a gradient) — blues shading into purples,
+// each clearly distinct at a glance rather than blending into its neighbors.
+const STRENGTH_TIERS = [
+  { name: "Beginner",     color: "hsl(220, 28%, 24%)" },
+  { name: "Novice",       color: "hsl(224, 42%, 36%)" },
+  { name: "Intermediate", color: "hsl(230, 52%, 48%)" },
+  { name: "Advanced",     color: "hsl(248, 56%, 58%)" },
+  { name: "Elite",        color: "hsl(264, 60%, 66%)" },
+  { name: "Pro",          color: "hsl(280, 66%, 72%)" },
+];
+const NO_DATA_TIER_COLOR = "#232739";
+
+function tierColor(tierIndex) {
+  if (tierIndex == null || tierIndex < 0) return NO_DATA_TIER_COLOR;
+  return STRENGTH_TIERS[Math.max(0, Math.min(STRENGTH_TIERS.length - 1, Math.round(tierIndex)))].color;
+}
+function tierName(tierIndex) {
+  if (tierIndex == null || tierIndex < 0) return "Not enough data";
+  return STRENGTH_TIERS[Math.max(0, Math.min(STRENGTH_TIERS.length - 1, Math.round(tierIndex)))].name;
+}
+
 function renderBodyFigure(view, colorForGroup) {
   const atlas = view === "front" ? MUSCLE_ATLAS_FRONT : MUSCLE_ATLAS_BACK;
   const vb = view === "front" ? "0 0 35 93" : "37 0 35 93";
@@ -700,6 +721,8 @@ let state = {
   calorieLog: store.get("calorieLog", { currentDate: todayISODate(), messages: [], history: [] }),
   nutritionGoals: store.get("nutritionGoals", { protein: 120, carbs: 150, fat: 55, fiber: 14 }),
   manualMaxes: store.get("manualMaxes", []),
+  trainingProfile: store.get("trainingProfile", ""),
+  muscleTiers: store.get("muscleTiers", { tiers: {}, notes: "", generatedAt: null }),
   photosCache: [],
   tab: "train",
 };
@@ -1481,28 +1504,41 @@ function renderExerciseHistoryFeed() {
 }
 
 function renderMuscleSummaryCard() {
-  const { scores, vol } = computeMuscleScores(30);
-  const anyVolume = Object.values(vol).some(v => v > 0);
-  const sorted = MUSCLE_GROUPS.slice().sort((a, b) => (vol[a] || 0) - (vol[b] || 0));
+  const { vol } = computeMuscleScores(30);
+  const tiers = state.muscleTiers.tiers || {};
+  const hasAnyTier = Object.keys(tiers).length > 0;
+  const sorted = MUSCLE_GROUPS.slice().sort((a, b) => (tiers[a] ?? -1) - (tiers[b] ?? -1));
+  const colorForGroup = g => tierColor(tiers[g]);
+
   return `
     <div class="card">
-      <h2>Muscle Balance <span class="muted" style="font-weight:400;">— last 30 days</span></h2>
-      ${anyVolume ? `
+      <div class="row between">
+        <h2 style="margin:0;">Muscle Balance</h2>
+        <button class="btn ${hasAnyTier ? "ghost" : "accent"} small" data-action="generate-muscle-tiers" ${muscleTiersLoading ? "disabled" : ""}>
+          ${muscleTiersLoading ? "Thinking…" : hasAnyTier ? "Update" : "Analyze"}
+        </button>
+      </div>
+      ${hasAnyTier ? `
+        <p class="muted">Colored by estimated strength level — last analyzed ${fmtDate(state.muscleTiers.generatedAt)}.</p>
         <div class="body-figure-row">
-          <div class="col">${renderBodyFigure("front", g => muscleColor(scores[g] || 0))}<span class="muted">Front</span></div>
-          <div class="col">${renderBodyFigure("back", g => muscleColor(scores[g] || 0))}<span class="muted">Back</span></div>
+          <div class="col">${renderBodyFigure("front", colorForGroup)}<span class="muted">Front</span></div>
+          <div class="col">${renderBodyFigure("back", colorForGroup)}<span class="muted">Back</span></div>
+        </div>
+        <div class="row wrap" style="gap:10px 14px; margin:4px 0 14px 0;">
+          ${STRENGTH_TIERS.map(t => `<div class="row" style="gap:5px;"><span class="legend-dot" style="background:${t.color}"></span><span class="muted" style="font-size:12px;">${t.name}</span></div>`).join("")}
         </div>
         <div>
           ${sorted.map(g => {
             const v = vol[g] || 0;
-            const label = v === 0 ? "Not trained recently" : scores[g] < 0.35 ? "Needs more volume" : scores[g] < 0.7 ? "Building" : "Well trained";
+            const recency = v === 0 ? "Not trained recently" : "Trained recently";
             return `<div class="muscle-row">
-              <div class="row"><span class="legend-dot" style="background:${muscleColor(scores[g] || 0)}"></span>${g}</div>
-              <div class="muted">${label}</div>
+              <div class="row"><span class="legend-dot" style="background:${tierColor(tiers[g])}"></span>${g}</div>
+              <div class="muted">${tierName(tiers[g])} · ${recency}</div>
             </div>`;
           }).join("")}
         </div>
-      ` : `<div class="empty">Log a few workouts and your muscle balance will show up here — darker means less trained, brighter blue means more trained, relative to your other muscle groups.</div>`}
+        ${state.muscleTiers.notes ? `<p class="muted" style="margin-top:10px;">${escapeHtml(state.muscleTiers.notes)}</p>` : ""}
+      ` : `<div class="empty">Tap Analyze to have Claude estimate your current strength level per muscle group — colored in 6 tiers from Beginner to Pro, based on your logged lifts and whatever training background you've added in Settings.</div>`}
     </div>
   `;
 }
@@ -1809,6 +1845,66 @@ const SUGGESTIONS_SYSTEM_PROMPT = `You are an experienced, encouraging strength 
 You're also given their nutrition goals and recent days actually eaten. Use it when it's genuinely relevant to the training question at hand — e.g. protein running under goal relative to how much they're lifting, or a pattern where intake looks mismatched with their hardest training days. Don't force a nutrition comment into every response — only mention it when the numbers actually show something worth flagging.`;
 
 let suggestionsLoading = null; // "general" or routineId, or null
+
+/* ---------------- Muscle strength-tier classification (AI-assisted) ----------------
+   Most of this app's exercises are accessory/machine work with no official public
+   strength-standard tables (unlike squat/bench/deadlift), so rather than inventing
+   precise numeric thresholds, this asks Claude to classify each muscle group into
+   one of the 6 STRENGTH_TIERS using the same real logged data as Suggestions, plus
+   whatever baseline training history the user has entered in Settings. */
+const MUSCLE_TIER_SYSTEM_PROMPT = `You are an experienced female strength coach classifying a lifter's current strength level, muscle group by muscle group, for a personal fitness app. The lifter is female — use typical strength norms/expectations for a female lifter of her age and bodyweight, not male norms.
+
+Classify EVERY muscle group listed into exactly one of these 6 tiers (0-indexed, lowest to highest): 0 Beginner, 1 Novice, 2 Intermediate, 3 Advanced, 4 Elite, 5 Pro.
+
+You're given: her recent logged exercise performance (weights/reps per muscle group), her bodyweight/age if known, and a free-text description she wrote herself of her training history and what she can lift (which may cover lifts or months not reflected in the app's own logs yet — trust it as real background, not just the in-app numbers). Most exercises here are machine/accessory work without official public strength-standard tables, so use your own best judgment and general knowledge of strength training norms rather than exact lookup tables — give your honest, reasonably calibrated estimate per muscle group, not a guess pulled toward the middle. If a muscle group has genuinely no information at all (never mentioned, never logged), still give your best reasonable estimate rather than leaving it out — everything needs a tier.`;
+
+function buildMuscleTierProfile() {
+  const lines = [];
+  const latestMetric = state.bodyMetrics.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  lines.push(`Age: ${state.settings.age || "unknown"}. Weight: ${latestMetric ? latestMetric.weight || "unknown" : "unknown"}. Height: ${latestMetric ? latestMetric.height || "unknown" : "unknown"}.`);
+  lines.push("");
+  lines.push("USER-WRITTEN TRAINING BACKGROUND / BASELINE (trust this even if it predates the app):");
+  lines.push(state.trainingProfile.trim() || "(nothing entered yet)");
+  return lines.join("\n");
+}
+
+function muscleTierToolSchema() {
+  const props = {};
+  MUSCLE_GROUPS.forEach(g => { props[g] = { type: "integer", minimum: 0, maximum: 5, description: `Tier for ${g}, 0=Beginner..5=Pro.` }; });
+  return {
+    name: "classify_muscle_strength",
+    description: "Classify the lifter's current strength tier for every muscle group.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tiers: { type: "object", properties: props, required: MUSCLE_GROUPS },
+        notes: { type: "string", description: "One short sentence of overall context or caveat, e.g. limited data for some groups." },
+      },
+      required: ["tiers", "notes"],
+    },
+  };
+}
+
+let muscleTiersLoading = false;
+async function generateMuscleTiers() {
+  muscleTiersLoading = true;
+  render();
+  try {
+    const userText = `Recent training data:\n\n${buildTrainingSummary()}\n\nProfile:\n\n${buildMuscleTierProfile()}\n\nClassify every muscle group's current strength tier.`;
+    const { input } = await callClaudeAPI(MUSCLE_TIER_SYSTEM_PROMPT, [{ role: "user", content: userText }], {
+      tools: [muscleTierToolSchema()],
+      toolChoice: { type: "tool", name: "classify_muscle_strength" },
+      maxTokens: 700,
+    });
+    state.muscleTiers = { tiers: input.tiers || {}, notes: input.notes || "", generatedAt: new Date().toISOString() };
+    persist(["muscleTiers"]);
+  } catch (err) {
+    alert(err.code === "NO_KEY" ? "Add your Claude API key in Settings first." : err.message);
+  } finally {
+    muscleTiersLoading = false;
+    render();
+  }
+}
 
 function renderSuggestions() {
   if (!state.settings.apiKey) {
@@ -2362,6 +2458,13 @@ function renderSettings() {
       <button class="btn accent block" data-action="save-nutrition-goals">Save Goals</button>
     </div>
     <div class="card">
+      <h3>Training Background</h3>
+      <p class="muted">Used by Muscle Balance (History tab) to estimate your current strength level per muscle group, even for training history from before you started logging here. Paste in your routine from the last few months, or anything about what you can lift — the more specific, the better the estimate.</p>
+      <div class="field"><label>Age</label><input id="profileAge" type="number" inputmode="numeric" placeholder="e.g. 16" value="${escapeAttr(state.settings.age || "")}" style="max-width:120px;"></div>
+      <div class="field"><label>Training history / what you can lift</label><textarea id="trainingProfileInput" rows="7" placeholder="e.g. my routine for the last 3 months has been...">${escapeHtml(state.trainingProfile)}</textarea></div>
+      <button class="btn accent block" data-action="save-training-profile">Save</button>
+    </div>
+    <div class="card">
       <h3>About</h3>
       <p class="muted">Paisley's Fitness Tracker stores everything locally on this device — your workouts, routines, body metrics, and photos never leave your phone, except when you use Calorie Chat or Suggestions, which send the relevant data (a food photo/description, or a summary of your training) to Claude to get a response.</p>
     </div>
@@ -2640,6 +2743,7 @@ function wireDynamicHandlers(root) {
     });
 
     // Suggestions
+    if (action === "generate-muscle-tiers") el.addEventListener("click", () => generateMuscleTiers());
     if (action === "get-suggestions-general") el.addEventListener("click", () => generateSuggestions("general"));
     if (action === "get-suggestions-routine") el.addEventListener("click", () => {
       const r = state.routines.find(r => r.id === el.dataset.id);
@@ -2688,6 +2792,13 @@ function wireDynamicHandlers(root) {
       };
       persist(["nutritionGoals"]);
       alert("Nutrition goals saved.");
+      render();
+    });
+    if (action === "save-training-profile") el.addEventListener("click", () => {
+      state.settings.age = document.getElementById("profileAge").value.trim();
+      state.trainingProfile = document.getElementById("trainingProfileInput").value;
+      persist(["settings", "trainingProfile"]);
+      alert("Training background saved.");
       render();
     });
     if (action === "clear-all-data") el.addEventListener("click", () => {
