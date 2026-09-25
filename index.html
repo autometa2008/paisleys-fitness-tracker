@@ -173,11 +173,17 @@
   }
   .set-check.done { background: var(--good); border-color: var(--good); color: #06261a; }
   .set-remove:active { background: var(--danger); border-color: var(--danger); color: #fff; }
-  .set-links { display:flex; gap:18px; margin: -2px 0 10px 35px; }
+  /* Mirrors .set-row's columns so "+ drop set" sits under the weight box
+     and "+ partials" under the reps box. */
+  .set-links { display:flex; gap:7px; align-items:center; margin: -4px 0 8px 0; }
+  .set-links .spacer-check { width: 28px; flex-shrink: 0; }
+  .set-links .spacer-x { visibility: hidden; }
   .drop-add-link {
-    display: inline-block; font-size: 13px;
-    color: var(--text-dim); cursor: pointer; -webkit-tap-highlight-color: transparent;
+    width: 76px; flex-shrink: 0; display: flex; justify-content: center;
+    white-space: nowrap; padding: 7px 0; font-size: 15px; font-weight: 600;
+    color: var(--accent-2); cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
+  .drop-add-link:active { opacity: .6; }
   .drop-row { margin-left: 24px; margin-bottom:8px; }
   .drop-tag { color: var(--danger); font-size: 12px; font-weight:700; margin-right:4px; flex-shrink:0; }
   .drop-tag.partial-tag { color: var(--accent-2); }
@@ -185,19 +191,15 @@
   .num.has-target::placeholder { color: var(--text-dim); }
   .entry-note { font-size: 14px; color: var(--text-dim); margin: -4px 0 8px 0; }
 
-  .drag-handle {
-    flex-shrink: 0; width: 30px; height: 36px; margin-left: -6px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--text-dim); font-size: 20px; cursor: grab;
-    /* Stops iOS from scrolling / text-selecting when a drag starts on the handle. */
-    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  .entry-footer .btn { white-space: nowrap; }
+  .entry-footer .move-btn { padding: 9px 12px; }
+  .reorder { display:flex; flex-direction:column; gap:4px; flex-shrink:0; }
+  .reorder button {
+    width: 34px; height: 26px; padding: 0; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text-dim);
+    font-size: 13px; cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
-  [data-drag-block] { transition: transform .15s ease; }
-  [data-drag-block].dragging {
-    transition: none; position: relative; z-index: 50; opacity: .92;
-    filter: drop-shadow(0 10px 18px rgba(0,0,0,.55));
-  }
-  [data-drag-block] > .list-item:last-child { border-bottom: 1px solid var(--border); }
+  .reorder button:active { background: var(--accent); color: #fff; }
 
   .superset-wrap { border-left: 3px solid var(--accent); padding-left: 12px; margin-bottom: 14px; }
   .superset-label { color: var(--accent); font-size: 13px; font-weight:700; text-transform:uppercase; margin-bottom:7px; }
@@ -691,53 +693,53 @@ const ROUTINES_VERSION = 2;
 
 const DEFAULT_ROUTINES = [
   { name: "Monday - Glutes & Hamstrings", exercises: [
-    strengthItem("Romanian Deadlift", { sets:3, reps:"8-10", weight:110, note:"110-115 lb" }),
+    strengthItem("Romanian Deadlift", { sets:3, reps:"8-10", weight:110 }),
     strengthItem("Smith Machine Hip Thrust", { sets:3, reps:"10-12", weight:240, note:"Shins vertical at the top" }),
-    strengthItem("Leg Press", { sets:3, reps:"10-12", weight:258, note:"45° press: 118 sled + 45+25 per side · feet mid, shoulder-width, deep" }),
-    strengthItem("Deficit Reverse Lunge", { sets:3, reps:"8-10", weight:20, note:"20s, reps each leg · front foot on a plate" }),
-    strengthItem("Seated Hamstring Curl", { sets:2, reps:"12-15", weight:65, note:"65-70 lb", ss:"mon1" }),
-    strengthItem("Standing Calf Raise", { sets:2, reps:"12-15", weight:90, note:"~90 lb", ss:"mon1" }),
+    strengthItem("Leg Press", { sets:3, reps:"10-12", weight:258, note:"45° press · feet mid, shoulder-width, deep" }),
+    strengthItem("Deficit Reverse Lunge", { sets:3, reps:"8-10", weight:20, note:"Front foot on a plate · reps each leg" }),
+    strengthItem("Seated Hamstring Curl", { sets:2, reps:"12-15", weight:65, ss:"mon1" }),
+    strengthItem("Standing Calf Raise", { sets:2, reps:"12-15", weight:90, ss:"mon1" }),
   ]},
   { name: "Tuesday - Push", exercises: [
     strengthItem("Floor Push-Up", { sets:4, reps:"6-8", note:"3 sec lowering" }),
-    strengthItem("Incline Dumbbell Press", { sets:2, reps:"8-10", weight:20, note:"20s" }),
-    strengthItem("Seated Dumbbell Shoulder Press", { sets:3, reps:"8-10", weight:22.5, note:"Neutral grip · 22.5s (or 25s for 7-8)" }),
-    strengthItem("Cable Lateral Raise", { sets:4, reps:"12-15", weight:7.5, drops:[5, 2.5], note:"Drop set on the last set: 7.5 → 5 → 2.5" }),
-    strengthItem("Single-Arm Tricep Pushdown", { sets:2, reps:"10-12", weight:15, note:"15-17.5 lb", ss:"tue1" }),
-    strengthItem("Incline Dumbbell Curl", { sets:3, reps:"10-12", weight:15, note:"15s · the last set is solo", ss:"tue1" }),
+    strengthItem("Incline Dumbbell Press", { sets:2, reps:"8-10", weight:20 }),
+    strengthItem("Seated Dumbbell Shoulder Press", { sets:3, reps:"8-10", weight:22.5, note:"Neutral grip" }),
+    strengthItem("Cable Lateral Raise", { sets:4, reps:"12-15", weight:7.5, drops:[5, 2.5], note:"Drop set on the last set" }),
+    strengthItem("Single-Arm Tricep Pushdown", { sets:2, reps:"10-12", weight:15, ss:"tue1" }),
+    strengthItem("Incline Dumbbell Curl", { sets:3, reps:"10-12", weight:15, note:"Last set is solo", ss:"tue1" }),
   ]},
   { name: "Wednesday - Pull", exercises: [
-    strengthItem("Assisted Chin-Up", { sets:3, reps:"4-6", weight:-20, note:"20-25 lb assistance · after the last set: 2 slow negatives (2 sec pause at top, 5 sec down)" }),
+    strengthItem("Assisted Chin-Up", { sets:3, reps:"4-6", weight:-20, note:"Slow negatives after the last set (pause at top, 5 sec down)" }),
     strengthItem("Flexed-Arm Hang", { sets:3, reps:"max", note:"Max hold, chin over the bar" }),
-    strengthItem("Neutral-Grip Lat Pulldown", { sets:3, reps:"6-8", weight:105, note:"105-110 lb" }),
-    strengthItem("Chest-Supported Row", { sets:2, reps:"8-10", weight:80, note:"~80 lb" }),
+    strengthItem("Neutral-Grip Lat Pulldown", { sets:3, reps:"6-8", weight:105 }),
+    strengthItem("Chest-Supported Row", { sets:2, reps:"8-10", weight:80 }),
     strengthItem("Y Raise", { sets:2, reps:"12-15", weight:5, ss:"wed1" }),
-    strengthItem("Rear Delt Fly", { sets:3, reps:"12-15", weight:55, drops:[40, 25], note:"The last set is solo · drop set on the last set: 55 → 40 → 25", ss:"wed1" }),
-    strengthItem("EZ Bar Curl", { sets:3, reps:"6-8", weight:50, drops:[40, 30, 20], note:"Drop set on the last set: 50 → 40 → 30 → 20, to failure" }),
-    strengthItem("Bayesian Cable Curl", { sets:3, reps:"10-12", weight:12.5, note:"12.5-15 lb, reps per arm" }),
+    strengthItem("Rear Delt Fly", { sets:3, reps:"12-15", weight:55, drops:[40, 25], note:"Last set is solo · drop set on the last set", ss:"wed1" }),
+    strengthItem("EZ Bar Curl", { sets:3, reps:"6-8", weight:50, drops:[40, 30, 20], note:"Drop set on the last set, to failure" }),
+    strengthItem("Bayesian Cable Curl", { sets:3, reps:"10-12", weight:12.5, note:"Reps per arm" }),
   ]},
   { name: "Thursday - Glutes & Quads (Heavy)", exercises: [
-    strengthItem("Smith Machine Squat", { sets:3, reps:"6-10", weight:70, note:"Start with the bar (20) + 25 per side · feet slightly forward, deep" }),
+    strengthItem("Smith Machine Squat", { sets:3, reps:"6-10", weight:70, note:"Feet slightly forward, deep" }),
     strengthItem("Smith Machine Hip Thrust", { sets:3, reps:"6-8", weight:250, note:"1 sec pause at top" }),
-    strengthItem("Bulgarian Split Squat", { sets:3, reps:"8-10", weight:30, note:"30s, reps each leg" }),
-    strengthItem("Leg Extension", { sets:3, reps:"15-20", weight:70, note:"70-75 lb · 3 sec lowering" }),
+    strengthItem("Bulgarian Split Squat", { sets:3, reps:"8-10", weight:30, note:"Reps each leg" }),
+    strengthItem("Leg Extension", { sets:3, reps:"15-20", weight:70, note:"3 sec lowering" }),
     strengthItem("Seated Calf Raise", { sets:2, reps:"20", weight:115 }),
   ]},
   { name: "Friday - Full Upper", exercises: [
-    strengthItem("Assisted Pull-Up", { sets:3, reps:"5-6", weight:-40, note:"40 lb assistance" }),
-    strengthItem("Push-Up", { sets:3, reps:"max", note:"Max floor reps, then 4-6 on bench" }),
-    strengthItem("Wide-Grip Lat Pulldown", { sets:3, reps:"6-8", weight:100, note:"100-105 lb" }),
+    strengthItem("Assisted Pull-Up", { sets:3, reps:"5-6", weight:-40 }),
+    strengthItem("Push-Up", { sets:3, reps:"max", note:"Max floor reps, then finish on a bench" }),
+    strengthItem("Wide-Grip Lat Pulldown", { sets:3, reps:"6-8", weight:100 }),
     strengthItem("Single-Arm Cable Row", { sets:2, reps:"8-12", weight:35, note:"Reps per arm" }),
-    strengthItem("Lateral Raise", { sets:3, reps:"12-15", weight:12, drops:[8, 5], note:"DB 12s · drop set on the last set: 12 → 8 → 5" }),
-    strengthItem("Cable Upright Row", { sets:3, reps:"10-12", weight:30, note:"Rope, ~30 lb · elbows no higher than shoulders", ss:"fri1" }),
-    strengthItem("Hammer Curl", { sets:3, reps:"10-12", weight:20, note:"20s", ss:"fri1" }),
+    strengthItem("Lateral Raise", { sets:3, reps:"12-15", weight:12, drops:[8, 5], note:"Drop set on the last set" }),
+    strengthItem("Cable Upright Row", { sets:3, reps:"10-12", weight:30, note:"Rope · elbows no higher than shoulders", ss:"fri1" }),
+    strengthItem("Hammer Curl", { sets:3, reps:"10-12", weight:20, ss:"fri1" }),
   ]},
   { name: "Saturday - Glutes & Core (Lighter)", exercises: [
-    strengthItem("45-Degree Back Extension", { sets:3, reps:"12-15", weight:10, note:"Glute focus · 10-25 lb plate" }),
-    strengthItem("B-Stance Hip Thrust", { sets:3, reps:"10-12", weight:135, note:"Smith, ~135 · reps per side" }),
-    strengthItem("Hip Abductor Machine", { sets:2, reps:"25-30", weight:110, drops:[""], note:"110-115 lb · drop set on the last set" }),
+    strengthItem("45-Degree Back Extension", { sets:3, reps:"12-15", weight:10, note:"Glute focus, hold a plate" }),
+    strengthItem("B-Stance Hip Thrust", { sets:3, reps:"10-12", weight:135, note:"Smith · reps per side" }),
+    strengthItem("Hip Abductor Machine", { sets:2, reps:"25-30", weight:110, drops:[""], note:"Drop set on the last set" }),
     strengthItem("Hanging Leg Raise", { sets:3, reps:"10-12", ss:"sat1" }),
-    strengthItem("Cable Crunch", { sets:3, reps:"12-15", weight:40, note:"40-50 lb", ss:"sat1" }),
+    strengthItem("Cable Crunch", { sets:3, reps:"12-15", weight:40, ss:"sat1" }),
     strengthItem("Dead Hang", { sets:3, reps:"max", note:"Max time" }),
     cardioItem("Incline Walk", { durationMin:20 }),
   ]},
@@ -785,6 +787,27 @@ if (store.get("routinesVersion", 1) < ROUTINES_VERSION) {
   store.set("routinesVersion", ROUTINES_VERSION);
 }
 seedDefaultRoutines();
+
+// One-time: refresh the exercise notes on already-saved routines (and a
+// workout in progress) to the current defaults, leaving sets/order alone.
+const ROUTINE_NOTES_VERSION = 2;
+if (store.get("routineNotesVersion", 1) < ROUTINE_NOTES_VERSION) {
+  const noteFor = (routineName, exId) => {
+    const dr = DEFAULT_ROUTINES.find(d => d.name === routineName);
+    const item = dr && dr.exercises.find(e => e.exerciseId === exId);
+    return item ? item.note : null;
+  };
+  state.routines.forEach(r => r.exercises.forEach(e => {
+    const n = noteFor(r.name, e.exerciseId);
+    if (n != null) e.note = n;
+  }));
+  if (state.activeWorkout) state.activeWorkout.entries.forEach(e => {
+    const n = noteFor(state.activeWorkout.routineName, e.exerciseId);
+    if (n != null) e.note = n;
+  });
+  persist(["routines", "activeWorkout"]);
+  store.set("routineNotesVersion", ROUTINE_NOTES_VERSION);
+}
 
 // One-time migration: fiber goal default was lowered from 28g to 14g.
 if (state.nutritionGoals.fiber === 28) {
@@ -1146,7 +1169,7 @@ function renderTrain() {
       </div>
     </div>
 
-    ${groups.map((g, bi) => renderEntryGroup(g, bi)).join("")}
+    ${groups.map(g => renderEntryGroup(g)).join("")}
 
     ${w.entries.length === 0 ? `<div class="empty">No exercises logged yet. Add one below.</div>` : ""}
 
@@ -1177,100 +1200,37 @@ function groupEntriesBySuperset(entries) {
     : { superset: false, entries: b });
 }
 
-// Moves the superset block at `from` to position `to`; returns the flat list.
-function moveBlock(items, from, to) {
+// Returns a reordered copy of items with `item` moved one step (dir = -1 up,
+// +1 down). Inside a superset it swaps with its partner; at the edge of a
+// superset (or for a lone exercise) the whole block hops past its neighbor
+// block, so supersets always stay together.
+function moveInList(items, item, dir) {
   const blocks = supersetBlocks(items);
-  const [b] = blocks.splice(from, 1);
-  blocks.splice(to, 0, b);
+  const bi = blocks.findIndex(b => b.includes(item));
+  if (bi < 0) return items;
+  const block = blocks[bi], pi = block.indexOf(item), to = pi + dir;
+  if (to >= 0 && to < block.length) {
+    [block[pi], block[to]] = [block[to], block[pi]];
+  } else {
+    const nb = bi + dir;
+    if (nb < 0 || nb >= blocks.length) return items;
+    [blocks[bi], blocks[nb]] = [blocks[nb], blocks[bi]];
+  }
   return blocks.flat();
 }
 
-const DRAG_HANDLE = scope => `<span class="drag-handle" data-action="drag-handle" data-scope="${scope}" title="Drag to reorder">⠿</span>`;
+const MOVE_BUTTONS = id => `
+  <div class="row" style="gap:6px;">
+    <button class="btn ghost small move-btn" data-action="move-entry" data-id="${id}" data-dir="-1" title="Move up">▲</button>
+    <button class="btn ghost small move-btn" data-action="move-entry" data-id="${id}" data-dir="1" title="Move down">▼</button>
+  </div>`;
 
-/* ---- Drag-and-drop reordering ----
-   Each draggable unit is a [data-drag-block] element (a lone exercise, or a
-   whole superset). Dragging only moves things visually with transforms; the
-   DOM isn't touched until drop, when the data is reordered and re-rendered.
-   (Moving DOM nodes mid-drag would drop the touch's pointer capture on iOS.) */
-function startDrag(handle, ev) {
-  const block = handle.closest("[data-drag-block]");
-  if (!block || (ev.pointerType === "mouse" && ev.button !== 0)) return;
-  ev.preventDefault();
-  const scroller = document.getElementById("app");
-  const blocks = [...block.parentElement.children].filter(el => el.hasAttribute("data-drag-block"));
-  const from = blocks.indexOf(block);
-  const startScroll = scroller.scrollTop;
-  // Layout in scroll-content coordinates, captured before anything moves.
-  const rects = blocks.map(el => { const r = el.getBoundingClientRect(); return { top: r.top + startScroll, height: r.height }; });
-  const gap = rects.length > 1 ? Math.max(0, rects[1].top - rects[0].top - rects[0].height) : 0;
-  const shift = rects[from].height + gap;
-  const startY = ev.clientY;
-  let lastY = startY, to = from, raf = null;
-
-  block.classList.add("dragging");
-  try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
-
-  const update = () => {
-    const dy = lastY - startY + scroller.scrollTop - startScroll;
-    block.style.transform = `translateY(${dy}px)`;
-    // Swap once the dragged block's leading edge passes a neighbor's midpoint,
-    // so a tall superset doesn't have to be dragged its whole height first.
-    const top = rects[from].top + dy, bottom = top + rects[from].height;
-    to = from;
-    rects.forEach((r, i) => {
-      const mid = r.top + r.height / 2;
-      if (i > from && bottom > mid) to = Math.max(to, i);
-      if (i < from && top < mid) to = Math.min(to, i);
-    });
-    blocks.forEach((el, i) => {
-      if (i === from) return;
-      const off = (from < to && i > from && i <= to) ? -shift : (to < from && i >= to && i < from) ? shift : 0;
-      el.style.transform = off ? `translateY(${off}px)` : "";
-    });
-  };
-  // Auto-scroll while the finger is held near the top or bottom edge.
-  const tick = () => {
-    const r = scroller.getBoundingClientRect(), edge = 70;
-    let v = 0;
-    if (lastY < r.top + edge) v = -Math.min(30, Math.ceil((r.top + edge - lastY) / 3));
-    else if (lastY > r.bottom - edge) v = Math.min(30, Math.ceil((lastY - (r.bottom - edge)) / 3));
-    if (v) { scroller.scrollTop += v; update(); }
-    raf = requestAnimationFrame(tick);
-  };
-  raf = requestAnimationFrame(tick);
-
-  const onMove = e => { lastY = e.clientY; update(); };
-  const onUp = () => {
-    cancelAnimationFrame(raf);
-    handle.removeEventListener("pointermove", onMove);
-    handle.removeEventListener("pointerup", onUp);
-    handle.removeEventListener("pointercancel", onUp);
-    blocks.forEach(el => { el.style.transform = ""; el.classList.remove("dragging"); });
-    if (to !== from) finishDrag(handle.dataset.scope, from, to);
-  };
-  handle.addEventListener("pointermove", onMove);
-  handle.addEventListener("pointerup", onUp);
-  handle.addEventListener("pointercancel", onUp);
-}
-
-function finishDrag(scope, from, to) {
-  if (scope === "workout") {
-    const w = getEditingWorkout();
-    w.entries = moveBlock(w.entries, from, to);
-    saveEditingWorkout();
-  } else if (scope === "routine") {
-    routineDraft.name = document.getElementById("routineName").value;
-    routineDraft.exercises = moveBlock(routineDraft.exercises, from, to);
-  }
-  render();
-}
-
-function renderEntryGroup(g, blockIdx) {
+function renderEntryGroup(g) {
   const inner = g.entries.map(e => renderExerciseEntry(e)).join("");
   if (g.superset) {
-    return `<div data-drag-block="${blockIdx}"><div class="superset-wrap"><div class="superset-label">Superset</div>${inner}</div></div>`;
+    return `<div class="superset-wrap"><div class="superset-label">Superset</div>${inner}</div>`;
   }
-  return `<div data-drag-block="${blockIdx}">${inner}</div>`;
+  return inner;
 }
 
 function renderExerciseEntry(entry) {
@@ -1278,10 +1238,13 @@ function renderExerciseEntry(entry) {
     return `
       <div class="card">
         <div class="row between">
-          <div class="row" style="gap:6px;">${DRAG_HANDLE("workout")}<h2 style="margin:0;">🏃 ${escapeHtml(entry.name)}</h2></div>
+          <h2>🏃 ${escapeHtml(entry.name)}</h2>
           <button class="btn ghost small" data-action="remove-entry" data-id="${entry.id}">✕</button>
         </div>
-        <div class="muted">${entry.durationMin} min${entry.distance ? " · " + entry.distance : ""}${entry.notes ? " · " + escapeHtml(entry.notes) : ""}</div>
+        <div class="row between">
+          <div class="muted">${entry.durationMin} min${entry.distance ? " · " + entry.distance : ""}${entry.notes ? " · " + escapeHtml(entry.notes) : ""}</div>
+          ${MOVE_BUTTONS(entry.id)}
+        </div>
       </div>`;
   }
 
@@ -1296,7 +1259,9 @@ function renderExerciseEntry(entry) {
       <button class="set-remove" data-action="remove-set" data-id="${entry.id}" data-set="${i}" title="Remove set">✕</button>
     </div>
     <div class="set-links">
+      <span class="spacer-check"></span>
       <span class="drop-add-link" data-action="add-drop" data-id="${entry.id}" data-set="${i}">+ drop set</span>
+      <span class="muted spacer-x">×</span>
       ${s.partials == null ? `<span class="drop-add-link" data-action="add-partials" data-id="${entry.id}" data-set="${i}">+ partials</span>` : ""}
     </div>
     ${s.partials != null ? `
@@ -1323,7 +1288,7 @@ function renderExerciseEntry(entry) {
   return `
     <div class="card">
       <div class="row between">
-        <div class="row" style="gap:6px;">${DRAG_HANDLE("workout")}<h2 style="margin:0;">${escapeHtml(entry.exerciseName)}</h2></div>
+        <h2>${escapeHtml(entry.exerciseName)}</h2>
         <button class="btn ghost small" data-action="remove-entry" data-id="${entry.id}">✕</button>
       </div>
       <div class="badge-group">${entry.groups.map(g => `<span class="pill">${g}</span>`).join("")}</div>
@@ -1333,9 +1298,12 @@ function renderExerciseEntry(entry) {
       </div>
       ${entry.note ? `<div class="entry-note">${escapeHtml(entry.note)}</div>` : ""}
       ${setsHtml}
-      <div class="row" style="margin-top:8px;">
-        <button class="btn ghost small" data-action="add-set" data-id="${entry.id}">+ Add Set</button>
-        ${!entry.supersetGroup ? `<button class="btn ghost small" data-action="make-superset" data-id="${entry.id}">🔗 Link Superset</button>` : ""}
+      <div class="row between entry-footer" style="margin-top:8px;">
+        <div class="row">
+          <button class="btn ghost small" data-action="add-set" data-id="${entry.id}">+ Add Set</button>
+          ${!entry.supersetGroup ? `<button class="btn ghost small" data-action="make-superset" data-id="${entry.id}">+ Superset</button>` : ""}
+        </div>
+        ${MOVE_BUTTONS(entry.id)}
       </div>
     </div>
   `;
@@ -1607,24 +1575,24 @@ function renderRoutineBuilder() {
     </div>
     <div class="card">
       <h3>Exercises</h3>
-      ${supersetBlocks(routineDraft.exercises).map((block, bi) => `<div data-drag-block="${bi}">${block.map(re => {
-        const i = routineDraft.exercises.indexOf(re);
+      ${routineDraft.exercises.map((re, i) => {
         const linked = i > 0 && re.supersetGroup && re.supersetGroup === routineDraft.exercises[i-1].supersetGroup;
         return `
         <div class="list-item" style="${linked ? 'border-left:3px solid var(--accent); padding-left:8px;' : ''}">
-          <div class="row" style="gap:6px;">
-            ${DRAG_HANDLE("routine")}
-            <div style="min-width:0;">
-              <div>${re.type === "cardio" ? "🏃 " : ""}${escapeHtml(routineItemName(re))}</div>
-              <div class="muted">${linked ? "linked superset · " : ""}${routineItemSummary(re)}</div>
-            </div>
+          <div>
+            <div>${re.type === "cardio" ? "🏃 " : ""}${escapeHtml(routineItemName(re))}</div>
+            <div class="muted">${linked ? "linked superset · " : ""}${routineItemSummary(re)}</div>
           </div>
           <div class="row">
             ${i > 0 ? `<button class="btn ghost small" data-action="draft-toggle-superset" data-idx="${i}">${linked ? "🔗 Unlink" : "🔗 Link"}</button>` : ""}
             <button class="btn ghost small" data-action="draft-remove-exercise" data-idx="${i}">✕</button>
+            <div class="reorder">
+              <button data-action="draft-move-exercise" data-idx="${i}" data-dir="-1" title="Move up">▲</button>
+              <button data-action="draft-move-exercise" data-idx="${i}" data-dir="1" title="Move down">▼</button>
+            </div>
           </div>
         </div>`;
-      }).join("")}</div>`).join("") || `<div class="empty">No exercises added yet.</div>`}
+      }).join("") || `<div class="empty">No exercises added yet.</div>`}
       <div class="row wrap" style="margin-top:8px;">
         <button class="btn ghost grow" data-action="draft-add-exercise">+ Add Exercise</button>
         <button class="btn ghost grow" data-action="draft-add-cardio">+ Add Cardio</button>
@@ -1795,7 +1763,7 @@ function renderWorkoutHistory() {
           <div class="muted">${expanded ? "▲" : "▼"}</div>
         </div>
         ${expanded ? (editing ? `
-          ${groupEntriesBySuperset(w.entries).map((g, bi) => renderEntryGroup(g, bi)).join("")}
+          ${groupEntriesBySuperset(w.entries).map(g => renderEntryGroup(g)).join("")}
           <div class="row" style="margin-top:4px;">
             <button class="btn ghost grow small" data-action="delete-workout" data-id="${w.id}">Delete Workout</button>
             <button class="btn accent grow small" data-action="stop-edit-workout">Done Editing</button>
@@ -2829,7 +2797,12 @@ function wireDynamicHandlers(root) {
       entry.sets[Number(el.dataset.set)].partials = el.value;
       saveEditingWorkout();
     });
-    if (action === "drag-handle") el.addEventListener("pointerdown", e => startDrag(el, e));
+    if (action === "move-entry") el.addEventListener("click", () => {
+      const w = getEditingWorkout();
+      const entry = w.entries.find(e => e.id === el.dataset.id);
+      w.entries = moveInList(w.entries, entry, Number(el.dataset.dir));
+      saveEditingWorkout(); render();
+    });
     if (action === "toggle-set-done") el.addEventListener("click", () => {
       const entry = getEditingWorkout().entries.find(e => e.id === el.dataset.id);
       const set = entry.sets[Number(el.dataset.set)];
@@ -2905,6 +2878,12 @@ function wireDynamicHandlers(root) {
     });
     if (action === "draft-toggle-superset") el.addEventListener("click", () => {
       toggleDraftSuperset(Number(el.dataset.idx));
+      render();
+    });
+    if (action === "draft-move-exercise") el.addEventListener("click", () => {
+      routineDraft.name = document.getElementById("routineName").value;
+      const items = routineDraft.exercises;
+      routineDraft.exercises = moveInList(items, items[Number(el.dataset.idx)], Number(el.dataset.dir));
       render();
     });
     if (action === "draft-remove-exercise") el.addEventListener("click", () => {
