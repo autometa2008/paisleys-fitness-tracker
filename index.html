@@ -3,12 +3,29 @@
 <head>
 <script>
   // GitHub Pages caches this file for 10 minutes (Cache-Control: max-age=600),
-  // which meant reopening the home-screen app soon after an update could still
-  // show the old version. This forces every fresh app-launch (no ?_v= yet) to
-  // re-fetch with a cache-busting query param, guaranteeing the latest build.
-  if (!location.search.includes('_v=')) {
-    location.replace(location.pathname + '?_v=' + Date.now());
-  }
+  // and iOS home-screen apps can relaunch straight into an old ?_v= URL (or
+  // resume a frozen page without reloading at all), so both cases are handled:
+  (function () {
+    const freshUrl = () => location.pathname + '?_v=' + Date.now();
+    // 1. Any launch whose ?_v= is missing or more than a minute old re-fetches
+    //    with a new one (a just-redirected load is always under a minute old).
+    const v = Number(new URLSearchParams(location.search).get('_v'));
+    if (!v || Date.now() - v > 60000) { location.replace(freshUrl()); return; }
+    // 2. Whenever the app comes back on screen, ask the server whether the page
+    //    has changed since this copy was loaded, and reload if it has. Workout
+    //    data lives in localStorage, so a reload loses nothing.
+    const loadedAt = Date.parse(document.lastModified);
+    const checkForUpdate = () => {
+      fetch(location.pathname, { method: 'HEAD', cache: 'no-store' })
+        .then(r => {
+          const serverAt = Date.parse(r.headers.get('last-modified'));
+          if (serverAt && loadedAt && serverAt > loadedAt) location.replace(freshUrl());
+        })
+        .catch(() => {});
+    };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+    window.addEventListener('pageshow', e => { if (e.persisted) checkForUpdate(); });
+  })();
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
