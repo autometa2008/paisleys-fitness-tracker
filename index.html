@@ -1523,8 +1523,12 @@ function startWorkout(routine) {
       const ex = exerciseById(re.exerciseId);
       if (!ex) return null;
       const prev = lastSessionSets(ex.id);
+      // Reps are never pre-filled (even if saved in the routine) so the gray
+      // hint always shows the most recent time this exercise was done.
+      const blankReps = s => ({ ...s, reps: "", partials: s.partials == null ? null : "",
+                                drops: s.drops.map(d => ({ ...d, reps: "" })) });
       const sets = prefillWeightsFromLast((re.defaultSets && re.defaultSets.length)
-        ? re.defaultSets.map(templateSet)
+        ? re.defaultSets.map(templateSet).map(blankReps)
         : prev ? prev.map(() => ({ weight:"", reps:"" })) : [{ weight:"", reps:"" }], prev);
       return { id: uid(), kind:"strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, note: re.note || "", sets, supersetGroup: re.supersetGroup || null };
     }).filter(Boolean) : []
@@ -2748,6 +2752,7 @@ function renderSettings() {
       <h3>Danger Zone</h3>
       <button class="btn danger block" data-action="clear-all-data">Erase All Data</button>
     </div>
+    <p class="muted" style="text-align:center; font-size:13px;">App version: ${new Date(document.lastModified).toLocaleString(undefined, { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })}</p>
   `;
 }
 
