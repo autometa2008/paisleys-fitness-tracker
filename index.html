@@ -1186,7 +1186,7 @@ function renderTrain() {
       </div>
     </div>
 
-    ${groups.map(g => renderEntryGroup(g)).join("")}
+    ${groups.map(g => renderEntryGroup(g, w)).join("")}
 
     ${w.entries.length === 0 ? `<div class="empty">No exercises logged yet. Add one below.</div>` : ""}
 
@@ -1242,15 +1242,49 @@ const MOVE_BUTTONS = id => `
     <button class="btn ghost small move-btn" data-action="move-entry" data-id="${id}" data-dir="1" title="Move down">▼</button>
   </div>`;
 
-function renderEntryGroup(g) {
-  const inner = g.entries.map(e => renderExerciseEntry(e)).join("");
+function renderEntryGroup(g, w) {
+  const inner = g.entries.map(e => renderExerciseEntry(e, w)).join("");
   if (g.superset) {
     return `<div class="superset-wrap"><div class="superset-label">Superset</div>${inner}</div>`;
   }
   return inner;
 }
 
-function renderExerciseEntry(entry) {
+// Sets from the most recent finished workout (any routine) that logged this
+// exercise. When `beforeWorkout` is a finished workout being edited, only
+// workouts before it count, so "last time" stays accurate there too.
+function lastSessionSets(exerciseId, beforeWorkout) {
+  const cutoff = beforeWorkout && beforeWorkout.date ? new Date(beforeWorkout.date).getTime() : Infinity;
+  const filled = v => v !== "" && v != null;
+  let best = null, bestTime = -Infinity;
+  state.workouts.forEach(w => {
+    if (beforeWorkout && w.id === beforeWorkout.id) return;
+    const t = new Date(w.date).getTime();
+    if (!(t < cutoff) || t <= bestTime) return;
+    const e = w.entries.find(e => e.kind === "strength" && e.exerciseId === exerciseId &&
+      e.sets.some(s => filled(s.reps) || filled(s.weight)));
+    if (e) { best = e.sets; bestTime = t; }
+  });
+  return best;
+}
+
+// Pre-fills set weights (and drop weights) from last time, set by set. Sets
+// beyond what was done last time take last time's final set weight.
+function prefillWeightsFromLast(sets, prev) {
+  if (!prev || !prev.length) return sets;
+  const filled = v => v !== "" && v != null;
+  sets.forEach((s, i) => {
+    const p = prev[Math.min(i, prev.length - 1)];
+    if (filled(p.weight)) s.weight = p.weight;
+    (s.drops || []).forEach((d, di) => {
+      const pd = prev[i] && (prev[i].drops || [])[di];
+      if (pd && filled(pd.weight)) d.weight = pd.weight;
+    });
+  });
+  return sets;
+}
+
+function renderExerciseEntry(entry, w) {
   if (entry.kind === "cardio") {
     return `
       <div class="card">
@@ -1265,13 +1299,18 @@ function renderExerciseEntry(entry) {
       </div>`;
   }
 
-  const setsHtml = entry.sets.map((s, i) => `
+  const prev = lastSessionSets(entry.exerciseId, w) || [];
+  const hint = (v, fallback) => (v !== "" && v != null) ? String(v) : fallback;
+  const setsHtml = entry.sets.map((s, i) => {
+    const p = prev[i] || {};
+    const repsHint = hint(p.reps, s.target || "");
+    return `
     <div class="set-row">
       <button class="set-check${s.done ? " done" : ""}" data-action="toggle-set-done" data-id="${entry.id}" data-set="${i}" title="Mark set done">${s.done ? "✓" : i+1}</button>
-      <input class="num" type="number" placeholder="lb" value="${s.weight ?? ""}" title="Negative = assisted (e.g. -20 for assisted pull-ups)"
+      <input class="num${hint(p.weight, "") ? " has-target" : ""}" type="number" placeholder="${escapeAttr(hint(p.weight, "lb"))}" value="${s.weight ?? ""}" title="Negative = assisted (e.g. -20 for assisted pull-ups)"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="weight">
       <span class="muted">×</span>
-      <input class="num${s.target ? " has-target" : ""}" type="number" inputmode="decimal" placeholder="${escapeAttr(s.target || "reps")}" value="${s.reps ?? ""}" title="Decimals allowed, e.g. 8.5"
+      <input class="num${repsHint ? " has-target" : ""}" type="number" inputmode="decimal" placeholder="${escapeAttr(repsHint || "reps")}" value="${s.reps ?? ""}" title="Decimals allowed, e.g. 8.5"
         data-action="set-field" data-id="${entry.id}" data-set="${i}" data-field="reps">
       <button class="set-remove" data-action="remove-set" data-id="${entry.id}" data-set="${i}" title="Remove set">✕</button>
     </div>
@@ -1285,22 +1324,22 @@ function renderExerciseEntry(entry) {
       <div class="set-row drop-row">
         <span class="drop-tag partial-tag">PART</span>
         <span class="muted">same wt ×</span>
-        <input class="num" type="number" inputmode="numeric" placeholder="reps" value="${s.partials}"
+        <input class="num${hint(p.partials, "") ? " has-target" : ""}" type="number" inputmode="numeric" placeholder="${escapeAttr(hint(p.partials, "reps"))}" value="${s.partials}"
           data-action="partial-field" data-id="${entry.id}" data-set="${i}">
         <button class="set-remove" data-action="remove-partials" data-id="${entry.id}" data-set="${i}" title="Remove partials">✕</button>
       </div>` : ""}
-    ${(s.drops||[]).map((d,di) => `
+    ${(s.drops||[]).map((d,di) => { const pd = (p.drops || [])[di] || {}; return `
       <div class="set-row drop-row">
         <span class="drop-tag">DROP</span>
-        <input class="num" type="number" placeholder="lb" value="${d.weight ?? ""}"
+        <input class="num${hint(pd.weight, "") ? " has-target" : ""}" type="number" placeholder="${escapeAttr(hint(pd.weight, "lb"))}" value="${d.weight ?? ""}"
           data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="weight">
         <span class="muted">×</span>
-        <input class="num" type="number" inputmode="decimal" placeholder="reps" value="${d.reps ?? ""}"
+        <input class="num${hint(pd.reps, "") ? " has-target" : ""}" type="number" inputmode="decimal" placeholder="${escapeAttr(hint(pd.reps, "reps"))}" value="${d.reps ?? ""}"
           data-action="drop-field" data-id="${entry.id}" data-set="${i}" data-drop="${di}" data-field="reps">
         <button class="set-remove" data-action="remove-drop" data-id="${entry.id}" data-set="${i}" data-drop="${di}" title="Remove drop">✕</button>
       </div>
-    `).join("")}
-  `).join("");
+    `; }).join("")}
+  `; }).join("");
 
   return `
     <div class="card">
@@ -1392,7 +1431,9 @@ function renderExerciseResults(query, groupFilter) {
 function addExerciseToWorkout(exId, supersetWithId) {
   const ex = exerciseById(exId);
   if (!ex) return;
-  const entry = { id: uid(), kind: "strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets: [{weight:"",reps:""}], supersetGroup: null };
+  const prev = lastSessionSets(ex.id);
+  const sets = prefillWeightsFromLast(prev ? prev.map(() => ({ weight:"", reps:"" })) : [{ weight:"", reps:"" }], prev);
+  const entry = { id: uid(), kind: "strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, sets, supersetGroup: null };
   if (supersetWithId) {
     const partner = state.activeWorkout.entries.find(e => e.id === supersetWithId);
     let gid = partner.supersetGroup;
@@ -1481,9 +1522,10 @@ function startWorkout(routine) {
       }
       const ex = exerciseById(re.exerciseId);
       if (!ex) return null;
-      const sets = (re.defaultSets && re.defaultSets.length)
+      const prev = lastSessionSets(ex.id);
+      const sets = prefillWeightsFromLast((re.defaultSets && re.defaultSets.length)
         ? re.defaultSets.map(templateSet)
-        : [{ weight:"", reps:"" }];
+        : prev ? prev.map(() => ({ weight:"", reps:"" })) : [{ weight:"", reps:"" }], prev);
       return { id: uid(), kind:"strength", exerciseId: ex.id, exerciseName: ex.name, groups: ex.groups, note: re.note || "", sets, supersetGroup: re.supersetGroup || null };
     }).filter(Boolean) : []
   };
@@ -1780,7 +1822,7 @@ function renderWorkoutHistory() {
           <div class="muted">${expanded ? "▲" : "▼"}</div>
         </div>
         ${expanded ? (editing ? `
-          ${groupEntriesBySuperset(w.entries).map(g => renderEntryGroup(g)).join("")}
+          ${groupEntriesBySuperset(w.entries).map(g => renderEntryGroup(g, w)).join("")}
           <div class="row" style="margin-top:4px;">
             <button class="btn ghost grow small" data-action="delete-workout" data-id="${w.id}">Delete Workout</button>
             <button class="btn accent grow small" data-action="stop-edit-workout">Done Editing</button>
