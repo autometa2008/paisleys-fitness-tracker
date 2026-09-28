@@ -1254,6 +1254,10 @@ function renderEntryGroup(g, w) {
 // exercise. When `beforeWorkout` is a finished workout being edited, only
 // workouts before it count, so "last time" stays accurate there too.
 function lastSessionSets(exerciseId, beforeWorkout) {
+  // Match by name too, so a same-named custom exercise counts as the same lift.
+  const ex = exerciseById(exerciseId);
+  const name = ex ? ex.name.trim().toLowerCase() : null;
+  const sameLift = e => e.exerciseId === exerciseId || (name && (e.exerciseName || "").trim().toLowerCase() === name);
   const cutoff = beforeWorkout && beforeWorkout.date ? new Date(beforeWorkout.date).getTime() : Infinity;
   const filled = v => v !== "" && v != null;
   let best = null, bestTime = -Infinity;
@@ -1261,7 +1265,7 @@ function lastSessionSets(exerciseId, beforeWorkout) {
     if (beforeWorkout && w.id === beforeWorkout.id) return;
     const t = new Date(w.date).getTime();
     if (!(t < cutoff) || t <= bestTime) return;
-    const e = w.entries.find(e => e.kind === "strength" && e.exerciseId === exerciseId &&
+    const e = w.entries.find(e => e.kind === "strength" && sameLift(e) &&
       e.sets.some(s => filled(s.reps) || filled(s.weight)));
     if (e) { best = e.sets; bestTime = t; }
   });
